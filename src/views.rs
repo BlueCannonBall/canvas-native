@@ -349,7 +349,9 @@ impl CanvasApp {
             .label(label.to_owned())
             .small()
             .disabled(!safe)
-            .on_click(cx.listener(move |this, _, _, cx| this.open_canvas_link(&url, cx)))
+            .on_click(
+                cx.listener(move |this, _, window, cx| this.open_canvas_link(&url, window, cx)),
+            )
             .into_any_element()
     }
     fn web_text_link(
@@ -367,7 +369,9 @@ impl CanvasApp {
             .text_color(rgb(colors.link))
             .hover(|s| s.underline())
             .child(label.to_owned())
-            .on_click(cx.listener(move |this, _, _, cx| this.open_canvas_link(&url, cx)))
+            .on_click(
+                cx.listener(move |this, _, window, cx| this.open_canvas_link(&url, window, cx)),
+            )
             .into_any_element()
     }
     fn global_nav(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -734,12 +738,18 @@ impl CanvasApp {
         }
         view.into_any_element()
     }
-    fn dashboard(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn dashboard(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let colors = palette(cx);
         let courses = self.courses();
         if self.get("course_list", json!({})).is_none() {
             return self.loading("course_list", json!({}), cx);
         }
+        let gap = 24.0;
+        let available =
+            (f32::from(window.viewport_size().width) - 88.0 - 56.0 - 244.0 - 28.0).max(280.0);
+        let columns = (((available + gap) / (340.0 + gap)).floor() as usize).clamp(1, 5);
+        let card_width =
+            ((available - gap * (columns.saturating_sub(1)) as f32) / columns as f32).max(280.0);
         let mut cards = div().flex().flex_wrap().gap_6();
         let query = self.search.read(cx).value().to_lowercase();
         let visible: Vec<_> = courses
@@ -791,7 +801,7 @@ impl CanvasApp {
             }
             let mut header = div()
                 .id(SharedString::from(format!("course-card-{id}")))
-                .h(px(116.))
+                .h(px(132.))
                 .p_5()
                 .bg(rgb(color))
                 .cursor_pointer()
@@ -812,10 +822,9 @@ impl CanvasApp {
             header.style().corner_radii.top_right = Some(px(6.).into());
             cards = cards.child(
                 div()
-                    // A fixed card width keeps every row on the same column
-                    // grid. Flex-grow made the final, partially filled row
-                    // wider than the rows above it.
-                    .w(px(320.))
+                    // Equal columns fill the available width. The computed
+                    // width keeps partial rows aligned with complete rows.
+                    .w(px(card_width))
                     .flex_shrink_0()
                     // A border on this rounded card leaves a stepped gray ring
                     // where the child header meets the corner. A shadow keeps
@@ -2080,9 +2089,9 @@ impl CanvasApp {
                         .label("Open in Canvas")
                         .small()
                         .disabled(open_disabled)
-                        .on_click(cx.listener(move |this, _, _, cx| {
+                        .on_click(cx.listener(move |this, _, window, cx| {
                             if let Some(url) = canvas_url.as_deref() {
-                                this.open_canvas_link(url, cx);
+                                this.open_canvas_link(url, window, cx);
                             }
                         })),
                 );
@@ -2696,7 +2705,9 @@ impl CanvasApp {
                             if url::Url::parse(&url)
                                 .is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
                             {
-                                event = event.on_click(move |_, _, cx| cx.open_url(&url));
+                                event = event.on_click(cx.listener(move |this, _, window, cx| {
+                                    this.open_canvas_link(&url, window, cx)
+                                }));
                             }
                         }
                         cell = cell.child(event);
@@ -3231,7 +3242,7 @@ impl Render for CanvasApp {
                 );
         }
         let page = match self.route.clone() {
-            Route::Dashboard => self.dashboard(cx),
+            Route::Dashboard => self.dashboard(window, cx),
             Route::Courses => self.all_courses(cx),
             Route::Calendar => self.calendar(cx),
             Route::Grades => self.grades(None, cx),

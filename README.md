@@ -127,9 +127,10 @@ on the input platform. Virtualization and animated scrolling are separate things
 
 ## Using the client
 
-- **Dashboard:** course cards open course Home pages. Cards use a fixed 320 px
-  column grid so partial rows stay aligned, with direct Modules, Assignments, and
-  Grades shortcuts in equal-width columns. Upcoming work appears in the To Do
+- **Dashboard:** course cards open course Home pages. Cards use equal-width
+  columns computed from the window width, so complete and partial rows stay
+  aligned. Each card has direct Modules, Assignments, and Grades shortcuts in
+  equal-width columns. Upcoming work appears in the To Do
   sidebar. Courses and upcoming work load automatically; there is no request form.
 - **Courses:** the global button opens a Canvas-style course drawer without
   changing the current page. Select a course, use **All Courses** to browse current
@@ -186,7 +187,8 @@ on the input platform. Virtualization and animated scrolling are separate things
   DOCX is a text preview, not a fully formatted Word page renderer.
 - **External tools:** Canvas-hosted LTI module items open their Canvas module-item
   URL in the system browser. Using the module item rather than the tool's direct
-  launch URL lets the browser's existing Canvas session sign the tool in.
+  launch URL lets the browser's existing Canvas session sign the tool in. Opening
+  a Canvas link minimizes the app so the system browser comes to the foreground.
 - **Session persistence:** the app enables Chrome's session-restore preference so
   Canvas's session cookies survive app and browser restarts. If Canvas invalidates
   the session, the error banner offers **Sign in again** and opens the browser
@@ -380,9 +382,9 @@ in Canvas button, page links, and LTI module items all use the system browser. T
 extracted text; both light and dark
 appearance looked correct. The
 global navigation's top book icon is gone. The dashboard grid was checked at
-1500 and 1152 window widths: cards are 320 px wide, three equal columns at 1500
-and two at 1152, and a partial final row keeps the same card width. The three
-shortcut buttons occupy equal thirds without clipping. Main and reader windows
+1500 and 1152 window widths: cards fill the available width in three equal
+columns at 1500 and two at 1152, and a partial final row keeps the same card
+width. The three shortcut buttons occupy equal thirds without clipping. Main and reader windows
 are clamped to the display: on a 1280×720 display the main window opened at
 1152×648 and the reader at 1000×576; at a 640×480 reader size the toolbar wrapped
 to two rows instead of extending off-screen. Rounded corners use a shadow edge

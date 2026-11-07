@@ -1292,9 +1292,12 @@ impl CanvasApp {
     fn document_canvas_url(&self, document: &DocumentSelection) -> Option<String> {
         document_canvas_url(&self.settings.origin, document)
     }
-    fn open_canvas_link(&mut self, url: &str, cx: &mut Context<Self>) {
+    fn open_canvas_link(&mut self, url: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.error = None;
         cx.open_url(url);
+        // The system browser can open behind the always-on-top app window.
+        // Minimizing the app gives the browser the foreground reliably.
+        window.minimize_window();
     }
     fn download_document(
         &mut self,
