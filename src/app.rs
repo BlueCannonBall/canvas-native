@@ -64,6 +64,7 @@ pub struct CanvasApp {
     prefetch_queue: VecDeque<Operation>,
     prefetch_attempted: HashSet<String>,
     error: Option<String>,
+    session_expired: bool,
     status: String,
     updated: Option<String>,
     search: Entity<InputState>,
@@ -223,6 +224,7 @@ impl CanvasApp {
             prefetch_queue: VecDeque::new(),
             prefetch_attempted: HashSet::new(),
             error: None,
+            session_expired: false,
             status: if demo {
                 "Demo · sample courses".into()
             } else {
@@ -1085,12 +1087,14 @@ impl CanvasApp {
                                 this.history.clear();
                                 let appearance=this.settings.appearance;this.settings=settings.clone();this.settings.appearance=appearance;
                                 this.data.clear();this.clear_module_cache();this.clear_document_cache();this.resource_images.clear();this.failures.clear();this.queue.clear();
+                                this.error=None;this.session_expired=false;
                                 if settings.appearance!=appearance{this.queue.push_back(Operation::Appearance(appearance));}
                                 this.queue.push_back(Operation::Tool{name:"refresh_auth".into(),args:json!({})});
                             },
                             Operation::Tool{name,..} if matches!(name.as_str(),"auth"|"refresh_auth")=>{
                                 this.reset_prefetch();
                                 this.history.clear();
+                                this.error=None;this.session_expired=false;
                                 this.route=Route::Dashboard;this.data.clear();this.clear_module_cache();this.clear_document_cache();this.resource_images.clear();this.load_route(cx);
                             },
                             Operation::Tool{name,..} if schema::is_write(name)=>{
@@ -1140,7 +1144,15 @@ impl CanvasApp {
                     result=>{
                         let error=match result{Ok(value)=>model::display(&schema::payload(&value)),Err(error)=>format!("{error:#}")};
                         if let Some(key)=operation_key(&operation){this.failures.insert(key,error.clone());}
-                        if visible{this.error=Some(error);this.status="Could not update Canvas".into();}
+                        if visible{
+                            this.session_expired=is_session_expired(&error);
+                            this.error=Some(if this.session_expired{
+                                "Your Canvas session has expired. Sign in again to continue.".into()
+                            }else{
+                                error
+                            });
+                            this.status="Could not update Canvas".into();
+                        }
                     }
                 }
                 this.pump(cx);this.pump_prefetch(cx);cx.notify();
@@ -1411,6 +1423,10 @@ fn operation_label(operation: &Operation) -> &'static str {
         },
     }
 }
+fn is_session_expired(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("401") || error.contains("unauthorized")
+}
 fn document_canvas_url(origin: &str, document: &DocumentSelection) -> Option<String> {
     let origin = origin.trim().trim_end_matches('/');
     if origin.is_empty() {
@@ -1487,6 +1503,16 @@ mod reader_layout_tests {
             "canvas://files/8/download"
         );
         assert!(document_from_file("4", &json!({"resource": ""})).is_none());
+    }
+
+    #[test]
+    fn unauthorized_errors_are_treated_as_expired_sessions() {
+        assert!(is_session_expired(
+            "Failed to fetch Canvas courses: HTTP status client error (401 Unauthorized)"
+        ));
+        assert!(is_session_expired("Unauthorized"));
+        assert!(!is_session_expired("connection timed out"));
+        assert!(!is_session_expired("HTTP 500"));
     }
 
     #[test]

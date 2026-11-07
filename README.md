@@ -190,6 +190,10 @@ on the input platform. Virtualization and animated scrolling are separate things
   Chrome/Chromium executable if one is not found automatically. Close the
   auxiliary Chrome window when finished so the app can refresh an expired Canvas
   session from its profile.
+- **Session persistence:** the app enables Chrome's session-restore preference so
+  Canvas's session cookies survive app and browser restarts. If Canvas invalidates
+  the session, the error banner offers **Sign in again** and opens the browser
+  login flow directly.
 - **Appearance:** choose System, Light, or Dark in Account, or use the sidebar’s
   Theme button to switch light/dark quickly. The preference is saved and System
   follows appearance changes. Native controls, HTML/text, tables, calendar,
@@ -326,21 +330,19 @@ it does not launch the native UI or change course/account data.
 
 ## Verification boundaries
 
-Verified for this revision: a real release build, all 110 non-ignored tests in
+Verified for this revision: a real release build, all 111 non-ignored tests in
 the release profile, formatting, Clippy with warnings denied, and
 the complete 24-operation catalog. Shared-desktop automation has been removed; this project must
 not send pointer or keyboard input to `:0` (see `AGENTS.md`).
 
-The isolated 111-test run (which includes the X11 icon test) passed. The PDF
+The isolated 112-test run (which includes the X11 icon test) passed. The PDF
 integration test now runs without Poppler and verifies real two-page hayro
 raster output, page dimensions/center colors, source and raster reuse, and cache
 deletion. Local HTTP tests verify parallel partial-module loading, targeted grade
 fetching, attachment-size bounds and safe GET refresh. Tests also cover the
 reader's page-width and prefetch-range rules, plus a headless GPUI render test
 that opens a window, renders a six-page document at a scrolled position, sends a
-wheel event and redraws. A live module ExternalTool was launched through its
-Canvas module item into the app-owned Chrome profile and reached the Codon
-Learning course page already signed in. That test is what caught the reader's list-state
+wheel event and redraws. That test is what caught the reader's list-state
 re-borrow panic; it uses the GPUI test platform and no display. These do not
 constitute visual UI or live Canvas latency verification.
 Additional tests cover Canvas landing-page selection, the front-page REST
@@ -359,7 +361,10 @@ navigation preserves the selected course.
 
 Live interactive institutional login, account writes, real downloads,
 native save dialogs, scrolling frame rate and other operating systems require
-separate verification.
+separate verification. A simulated 401 at startup displayed the session-expired
+banner and **Sign in again** launched the browser login; the Chrome profile
+contains `session.restore_on_startup = 1`, but a complete sign-in/restart cycle
+was not run because institutional credentials were not entered here.
 
 The reader was exercised visually on a private headless display (weston's
 headless backend with Xwayland, `DISPLAY=:1`), against the configured account in

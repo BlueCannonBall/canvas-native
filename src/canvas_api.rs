@@ -661,6 +661,13 @@ async fn canvas_driver(
     std::fs::create_dir_all(&profile)?;
     let mut caps = DesiredCapabilities::chrome();
     caps.add_arg(&format!("--user-data-dir={}", profile.display()))?;
+    // Canvas uses session cookies. Chrome discards those on exit unless session
+    // restore is enabled, which would require a fresh institutional login after
+    // every app restart. This preference keeps the app-owned profile signed in.
+    caps.add_experimental_option(
+        "prefs",
+        serde_json::json!({"session": {"restore_on_startup": 1}}),
+    )?;
     if headless {
         caps.set_headless()?;
     }

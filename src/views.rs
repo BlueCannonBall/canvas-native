@@ -267,7 +267,9 @@ impl CanvasApp {
                         div()
                             .flex_1()
                             .text_sm()
-                            .child(if self.show_technical {
+                            .child(if self.session_expired {
+                                "Your Canvas session has expired. Sign in again to continue.".into()
+                            } else if self.show_technical {
                                 error.clone()
                             } else {
                                 "Canvas could not complete the last request. Try again, or open Account to sign in again.".into()
@@ -651,10 +653,19 @@ impl CanvasApp {
         let key = model::cache_key(name, &args);
         if self.failures.contains_key(&key) {
             let name = name.to_owned();
+            let session_expired = self.session_expired;
             return box_view(cx).child(heading("Couldn’t load this content"))
-                .child(muted("Check your connection, then try again. Your other courses are still available.", cx))
-                .child(Button::new("retry-content").label("Try again").small().on_click(cx.listener(move|this,_,_,cx| {
-                    this.enqueue_read(Request::new(&name, args.clone()), true);this.pump(cx);cx.notify();
+                .child(muted(if session_expired {
+                    "Sign in again to reload your Canvas content."
+                } else {
+                    "Check your connection, then try again. Your other courses are still available."
+                }, cx))
+                .child(Button::new("retry-content").label(if session_expired {"Sign in again"} else {"Try again"}).small().on_click(cx.listener(move|this,_,_,cx| {
+                    if session_expired {
+                        this.perform(Operation::Tool{name:"auth".into(),args:json!({})},cx);
+                    } else {
+                        this.enqueue_read(Request::new(&name, args.clone()), true);this.pump(cx);cx.notify();
+                    }
                 }))).into_any_element();
         }
         let label = match name {
@@ -3091,10 +3102,55 @@ impl Render for CanvasApp {
             );
         }
         if self.error.is_some() {
-            content=content.child(div().p_4().bg(rgb(colors.warning)).border_1().border_color(rgb(colors.warning_border)).rounded_sm().flex().gap_4().items_center()
-            .child(div().flex_1().text_sm().child(if self.show_technical{self.error.clone().unwrap_or_default()}else{"Canvas could not complete the last request. Try Refresh, or open Account to sign in again.".into()}))
-            .child(self.route_button("error-account","Account",Route::Account,cx))
-            .child(Button::new("dismiss-error").icon(IconName::Close).small().on_click(cx.listener(|this,_,_,cx|{this.error=None;cx.notify();}))));
+            let message = if self.session_expired {
+                "Your Canvas session has expired. Sign in again to continue.".into()
+            } else if self.show_technical {
+                self.error.clone().unwrap_or_default()
+            } else {
+                "Canvas could not complete the last request. Try Refresh, or open Account to sign in again.".into()
+            };
+            let mut banner = div()
+                .p_4()
+                .bg(rgb(colors.warning))
+                .border_1()
+                .border_color(rgb(colors.warning_border))
+                .rounded_sm()
+                .flex()
+                .gap_4()
+                .items_center()
+                .child(div().flex_1().text_sm().child(message));
+            if self.session_expired {
+                banner = banner.child(
+                    Button::new("sign-in-again")
+                        .primary()
+                        .label("Sign in again")
+                        .small()
+                        .disabled(self.pending.is_some())
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.perform(
+                                Operation::Tool {
+                                    name: "auth".into(),
+                                    args: json!({}),
+                                },
+                                cx,
+                            )
+                        })),
+                );
+            }
+            content = content.child(
+                banner
+                    .child(self.route_button("error-account", "Account", Route::Account, cx))
+                    .child(
+                        Button::new("dismiss-error")
+                            .icon(IconName::Close)
+                            .small()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.error = None;
+                                this.session_expired = false;
+                                cx.notify();
+                            })),
+                    ),
+            );
         }
         if let Some(path) = &self.last_saved {
             let open = path.clone();
