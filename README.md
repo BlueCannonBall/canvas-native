@@ -14,7 +14,8 @@ login.
 | --- | --- |
 | ![Dashboard in the sample account](docs/screenshots/dashboard.png) | ![Document reader in the sample account](docs/screenshots/reader.png) |
 
-*Screenshots use the built-in sample account; no real account data is shown.*
+*Screenshots use the built-in sample account; no real account data is shown.
+File actions are disabled there because the sample account has no Canvas session.*
 
 ## Features
 
@@ -23,7 +24,8 @@ login.
 - Virtualized module lists and on-demand loading for large courses.
 - Continuous-scroll PDF reader rendered in-process by
   [hayro](https://github.com/LaurenzV/hayro); page navigation, jump-to-page,
-  25–200% zoom, fit width, fit page, and selectable text/images.
+  25–200% zoom, fit width, fit page, selectable text/images, Download,
+  Save As…, and Open in Canvas.
 - Document links open in a separate reader window, leaving the current list in
   place. Canvas HTML links to files are routed to the same native reader.
 - Institutional login through the platform browser; no Canvas API token needed.
@@ -171,7 +173,8 @@ on the input platform. Virtualization and animated scrolling are separate things
   native reader actions instead of opening the system browser. A file with a
   readable resource opens in that window; the metadata card is only used when no
   resource is available. PDFs scroll continuously through rendered pages, with a
-  compact toolbar for page navigation, jump, 25–200% zoom, fit width and fit page. Pages
+  compact toolbar for page navigation, jump, 25–200% zoom, fit width, fit page,
+  Download, Save As…, and Open in Canvas. Pages
   are rendered on demand as they scroll into view, and the next pages are prepared
   in the background. Above 100% a page is wider than the reader column and scrolls
   sideways inside its own row; a page that fails to render offers a Retry.
@@ -314,12 +317,12 @@ it does not launch the native UI or change course/account data.
 
 ## Verification boundaries
 
-Verified for this revision: a real release build, all 107 non-ignored tests in
+Verified for this revision: a real release build, all 108 non-ignored tests in
 the release profile, formatting, Clippy with warnings denied, and
 the complete 24-operation catalog. Shared-desktop automation has been removed; this project must
 not send pointer or keyboard input to `:0` (see `AGENTS.md`).
 
-The isolated 108-test run (which includes the X11 icon test) passed. The PDF
+The isolated 109-test run (which includes the X11 icon test) passed. The PDF
 integration test now runs without Poppler and verifies real two-page hayro
 raster output, page dimensions/center colors, source and raster reuse, and cache
 deletion. Local HTTP tests verify parallel partial-module loading, targeted grade
@@ -357,8 +360,10 @@ reader instead of the system browser. Pages were rasterized by hayro at fit
 width; the reader scrolled from page 1 to page 14 and back, and page 1 rendered
 again after its decoded image had been evicted. Fit page showed a whole page at
 58%; wheel scrolling moved continuously into page 2; typing a page number and
-pressing Go jumped to it; Text & images
-rendered extracted text; both light and dark appearance looked correct. The
+pressing Go jumped to it; Download saved the PDF and showed the completion strip
+with Open and Show in folder; the Open in Canvas URL construction is unit-tested
+but was not clicked. Text & images rendered extracted text; both light and dark
+appearance looked correct. The
 global navigation's top book icon is gone. Course cards were checked at 1280 and
 940 window widths: the three shortcut buttons occupy equal thirds, and the
 rounded corners use a shadow edge with no stepped gray border ring. Plain Xvfb

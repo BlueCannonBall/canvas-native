@@ -10,6 +10,7 @@ use std::io::{Cursor, Read};
 
 #[path = "canvas_api.rs"]
 mod api;
+pub(crate) use api::extract_file_id_from_resource;
 
 #[derive(Debug, serde::Deserialize)]
 struct AssignmentInfoParams {

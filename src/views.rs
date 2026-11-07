@@ -246,6 +246,90 @@ impl CanvasApp {
         }
         files.into_any_element()
     }
+    /// Reader windows do not render the main app chrome, so download and error
+    /// feedback need their own compact strip under the toolbar.
+    fn reader_notice(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let colors = palette(cx);
+        if let Some(error) = &self.error {
+            return Some(
+                div()
+                    .mx_2()
+                    .mt_2()
+                    .p_3()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(rgb(colors.warning_border))
+                    .bg(rgb(colors.warning))
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_sm()
+                            .child(if self.show_technical {
+                                error.clone()
+                            } else {
+                                "Canvas could not complete the last request. Try again, or open Account to sign in again.".into()
+                            }),
+                    )
+                    .child(
+                        Button::new("reader-dismiss-error")
+                            .icon(IconName::Close)
+                            .small()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.error = None;
+                                cx.notify();
+                            })),
+                    )
+                    .into_any_element(),
+            );
+        }
+        let path = self.last_saved.as_ref()?;
+        let open = path.clone();
+        let reveal = path.clone();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        Some(
+            div()
+                .mx_2()
+                .mt_2()
+                .p_3()
+                .rounded_sm()
+                .border_1()
+                .border_color(rgb(colors.border))
+                .bg(rgb(colors.notice))
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(div().flex_1().text_sm().child(format!("Downloaded {name}")))
+                .child(
+                    Button::new("reader-open-download")
+                        .label("Open")
+                        .small()
+                        .on_click(move |_, _, cx| cx.open_with_system(&open)),
+                )
+                .child(
+                    Button::new("reader-reveal-download")
+                        .label("Show in folder")
+                        .small()
+                        .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
+                )
+                .child(
+                    Button::new("reader-dismiss-download")
+                        .icon(IconName::Close)
+                        .small()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.last_saved = None;
+                            cx.notify();
+                        })),
+                )
+                .into_any_element(),
+        )
+    }
     fn web_link(&self, id: impl Into<SharedString>, label: &str, url: &str) -> AnyElement {
         let url = url.to_owned();
         let safe = url::Url::parse(&url).is_ok_and(|u| {
@@ -1946,7 +2030,51 @@ impl CanvasApp {
                 );
             }
         }
+        if layout != ReaderLayout::Embedded {
+            if self.document_view == DocumentView::Text {
+                bar = bar.child(div().flex_1());
+            }
+            let download = document.clone();
+            let save_as = document.clone();
+            let canvas_url = self.document_canvas_url(document);
+            let open_disabled = self.demo || canvas_url.is_none();
+            bar = bar
+                .child(
+                    Button::new("document-download")
+                        .label("Download")
+                        .small()
+                        .disabled(self.demo)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.download_document(&download, false, cx)
+                        })),
+                )
+                .child(
+                    Button::new("document-save-as")
+                        .label("Save As…")
+                        .small()
+                        .disabled(self.demo)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.download_document(&save_as, true, cx)
+                        })),
+                )
+                .child(
+                    Button::new("document-open-canvas")
+                        .label("Open in Canvas")
+                        .small()
+                        .disabled(open_disabled)
+                        .on_click(cx.listener(move |_, _, _, cx| {
+                            if let Some(url) = canvas_url.as_deref() {
+                                cx.open_url(url);
+                            }
+                        })),
+                );
+        }
         view = view.child(bar);
+        if layout == ReaderLayout::Window
+            && let Some(notice) = self.reader_notice(cx)
+        {
+            view = view.child(notice);
+        }
         if self.document_view == DocumentView::Text {
             return view
                 .child(self.document_text(

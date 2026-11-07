@@ -1097,7 +1097,7 @@ impl CanvasApp {
                                 this.data.retain(|k,_|!k.starts_with("dashboard_items:")&&!k.starts_with("planner_note_info:"));
                                 this.note=None;this.confirm_save=false;this.confirm_delete=None;this.route=Route::Calendar;this.load_route(cx);
                             },
-                            Operation::Tool{name,..} if name=="download_attachment"=>{this.last_saved=payload["saved_path"].as_str().map(PathBuf::from);},
+                            Operation::Tool{name,..} if name=="download_attachment"=>{this.error=None;this.last_saved=payload["saved_path"].as_str().map(PathBuf::from);},
                             Operation::Tool{name,..} if name=="module_list"=>{
                                 if let Some((course,index))=prepared_module.take(){this.module_indexes.insert(course,index);this.rebuild_module_rows(cx);}
                             },
@@ -1264,7 +1264,25 @@ impl CanvasApp {
             cx,
         );
     }
+    fn document_canvas_url(&self, document: &DocumentSelection) -> Option<String> {
+        document_canvas_url(&self.settings.origin, document)
+    }
+    fn download_document(
+        &mut self,
+        document: &DocumentSelection,
+        save_as: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let file = json!({
+            "resource": document.resource,
+            "download_resource": document.resource,
+            "filename": document.title,
+            "display_name": document.title,
+        });
+        self.download(&file, save_as, cx);
+    }
     fn download(&mut self, file: &Value, save_as: bool, cx: &mut Context<Self>) {
+        self.error = None;
         let resource = field(file, "download_resource");
         let resource = if resource.is_empty() {
             field(file, "resource")
@@ -1379,6 +1397,21 @@ fn operation_label(operation: &Operation) -> &'static str {
         },
     }
 }
+fn document_canvas_url(origin: &str, document: &DocumentSelection) -> Option<String> {
+    let origin = origin.trim().trim_end_matches('/');
+    if origin.is_empty() {
+        return None;
+    }
+    let file_id = crate::engine::extract_file_id_from_resource(&document.resource)?;
+    let course = document
+        .course
+        .as_deref()
+        .filter(|course| course.chars().all(|character| character.is_ascii_digit()));
+    Some(match course {
+        Some(course) => format!("{origin}/courses/{course}/files/{file_id}"),
+        None => format!("{origin}/files/{file_id}"),
+    })
+}
 fn document_from_file(course: &str, file: &Value) -> Option<DocumentSelection> {
     let resource = file["resource"]
         .as_str()
@@ -1440,6 +1473,30 @@ mod reader_layout_tests {
             "canvas://files/8/download"
         );
         assert!(document_from_file("4", &json!({"resource": ""})).is_none());
+    }
+
+    #[test]
+    fn document_canvas_url_uses_internal_course_and_file_ids() {
+        let document = DocumentSelection {
+            course: Some("4".into()),
+            resource: "canvas://files/77/download".into(),
+            title: "Syllabus.pdf".into(),
+            start: 0,
+        };
+        assert_eq!(
+            document_canvas_url("https://canvas.example.edu/", &document).as_deref(),
+            Some("https://canvas.example.edu/courses/4/files/77")
+        );
+        let mut no_course = document.clone();
+        no_course.course = None;
+        assert_eq!(
+            document_canvas_url("https://canvas.example.edu", &no_course).as_deref(),
+            Some("https://canvas.example.edu/files/77")
+        );
+        let mut not_a_file = document;
+        not_a_file.resource = "canvas://modules/9".into();
+        assert!(document_canvas_url("https://canvas.example.edu", &not_a_file).is_none());
+        assert!(document_canvas_url("", &not_a_file).is_none());
     }
 
     /// Scrolling through more than the decoded-image cache evicts early pages.
