@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>Canvas Native</title>
+  <desc>A classroom chalkboard.</desc>
+  <g fill="#2e3436">
+    <path fill-rule="evenodd" d="M2 2 H14 Q15 2 15 3 V12 H1 V3 Q1 2 2 2 Z M3 4 V10 H13 V4 Z"/>
+    <path d="M0 12 H16 V13 Q16 14 15 14 H1 Q0 14 0 13 Z"/>
+    <path d="M5 8 L10 5 V8 Z"/>
+  </g>
+</svg>

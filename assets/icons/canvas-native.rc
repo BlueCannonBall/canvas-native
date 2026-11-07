@@ -1,0 +1,5 @@
+// Windows resources for the application executable. GPUI's Windows backend
+// loads the window icon from this resource ID 1 at startup, and Explorer and
+// the taskbar read the same icon from the executable. Paths are resolved
+// relative to this file, matching the resource compiler's working directory.
+1 ICON "edu.canvasnative.CanvasNative.ico"

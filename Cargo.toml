@@ -1,0 +1,70 @@
+[package]
+name = "canvas-native"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+description = "A native Rust + GPUI desktop client for Canvas LMS"
+license = "MIT"
+repository = "https://github.com/BlueCannonBall/canvas-native"
+readme = "README.md"
+build = "build.rs"
+
+[build-dependencies]
+embed-resource = "3"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+blade-graphics = "=0.7.1"
+directories = "6"
+chrono = "0.4"
+gpui = "=0.2.2"
+gpui-component = "=0.5.1"
+gpui-component-assets = "=0.5.1"
+# Pure-Rust PDF rasterization. This keeps document previews working on Windows
+# and removes the runtime dependency on Poppler's pdftoppm/pdfinfo.
+hayro = { version = "0.9", default-features = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+thirtyfour = "0.37.5"
+lopdf = { version = "0.38", default-features = false }
+pdf-extract = "0.10"
+png = "0.17"
+quick-xml = "0.39"
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
+url = "2"
+tempfile = "=3.25.0"
+# Already used by GPUI; these add no new packages or image formats.
+image = "=0.25.10"
+usvg = { version = "=0.45.1", default-features = false }
+resvg = { version = "=0.45.1", default-features = false }
+html5ever = "=0.27.0"
+markup5ever_rcdom = "=0.3.0"
+x11rb = "0.13"
+# GPUI 0.2.2 uses xattr 0.2, which still refers to libc's ENOATTR alias.
+libc = "=0.2.177"
+
+[dev-dependencies]
+flate2 = "1"
+# Enables the headless GPUI test platform so layout/render regressions are
+# caught without opening a real window.
+gpui = { version = "=0.2.2", features = ["test-support"] }
+
+[profile.dev]
+debug = 0
+opt-level = 1
+
+# GPUI's text shaping, layout, SVG rasterization and shader compilation are CPU
+# work even with a hardware Vulkan renderer. Keep cargo run responsive too.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.test]
+debug = 0
+
+# Keep release runtime optimization, but reuse unchanged application code between
+# builds. Registry dependencies remain optimized and reusable as before.
+[profile.release]
+incremental = true

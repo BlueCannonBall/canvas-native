@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Canvas Native — chalkboard</title>
+  <desc>A green classroom chalkboard in a warm wooden frame, with a chalk triangle, chalk, and an eraser on its ledge.</desc>
+  <defs>
+    <linearGradient id="frame-edge" x1="8" x2="120" y1="0" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#865e3c"/>
+      <stop offset=".04" stop-color="#b5835a"/>
+      <stop offset=".09" stop-color="#986a44"/>
+      <stop offset=".91" stop-color="#986a44"/>
+      <stop offset=".96" stop-color="#b5835a"/>
+      <stop offset="1" stop-color="#63452c"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" x2="0" y1="20" y2="108" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e5c7ab"/>
+      <stop offset=".08" stop-color="#cdab8f"/>
+      <stop offset=".90" stop-color="#cdab8f"/>
+      <stop offset="1" stop-color="#b5835a"/>
+    </linearGradient>
+    <linearGradient id="slate" x1="0" x2="0" y1="32" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#244c40"/>
+      <stop offset="1" stop-color="#306253"/>
+    </linearGradient>
+    <linearGradient id="ledge-edge" x1="4" x2="124" y1="0" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#865e3c"/>
+      <stop offset=".04" stop-color="#cdab8f"/>
+      <stop offset=".08" stop-color="#986a44"/>
+      <stop offset=".92" stop-color="#986a44"/>
+      <stop offset=".96" stop-color="#b5835a"/>
+      <stop offset="1" stop-color="#63452c"/>
+    </linearGradient>
+    <linearGradient id="chalk" x1="0" x2="0" y1="96" y2="100" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".45" stop-color="#f6f5f4"/>
+      <stop offset="1" stop-color="#c0bfbc"/>
+    </linearGradient>
+    <linearGradient id="eraser" x1="86" x2="108" y1="0" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c0bfbc"/>
+      <stop offset=".13" stop-color="#f6f5f4"/>
+      <stop offset=".87" stop-color="#deddda"/>
+      <stop offset="1" stop-color="#9a9996"/>
+    </linearGradient>
+  </defs>
+  <!-- Front profile, then the flat face of the wooden frame. -->
+  <rect x="8" y="24" width="112" height="88" rx="8" fill="url(#frame-edge)"/>
+  <rect x="8" y="20" width="112" height="88" rx="8" fill="url(#wood)"/>
+  <path d="M16 21 H112" fill="none" stroke="#f3ddc6" stroke-width="1"/>
+  <!-- Recessed edge and matte writing surface. -->
+  <rect x="16" y="28" width="96" height="72" rx="2" fill="#63452c"/>
+  <path fill="#1c4b3d" d="M18 30 H110 V98 H18Z"/>
+  <path fill="url(#slate)" d="M18 32 H110 V98 H18Z"/>
+  <path d="M17 98 H111" stroke="#e5c7ab" stroke-width="1" opacity=".65"/>
+  <!-- A single large chalk diagram, rather than tiny simulated writing. -->
+  <path d="M34 80 H82 L82 42Z" fill="none" stroke="#f6f5f4" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M74 80 V72 H82" fill="none" stroke="#f6f5f4" stroke-width="2" stroke-linejoin="round"/>
+  <!-- Broad wooden ledge, with the standard four-pixel darker profile. -->
+  <path fill="url(#ledge-edge)" d="M4 104 H124 V110 Q124 116 118 116 H10 Q4 116 4 110Z"/>
+  <path fill="#b5835a" d="M4 100 H124 V104 Q124 110 118 110 H10 Q4 110 4 104Z"/>
+  <path fill="#dec0a4" d="M4 100 H124 V104 H4Z"/>
+  <!-- Eraser: felt underside and a plain rounded wooden grip. -->
+  <rect x="86" y="96" width="22" height="6" rx="2" fill="#3d3846"/>
+  <rect x="86" y="90" width="22" height="8" rx="2" fill="url(#eraser)"/>
+  <path fill="#c0bfbc" d="M86 96 H108 V98 H86Z"/>
+  <!-- Chalk resting on the ledge. -->
+  <rect x="24" y="98" width="18" height="4" rx="2" fill="#c0bfbc"/>
+  <rect x="24" y="96" width="18" height="4" rx="2" fill="url(#chalk)"/>
+</svg>

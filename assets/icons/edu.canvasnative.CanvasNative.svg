@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Canvas Native — open book</title>
+  <desc>An open teal-bound book with plain ivory pages and a red ribbon.</desc>
+  <defs>
+    <linearGradient id="cover-edge" x1="8" x2="120" y1="0" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#004858"/>
+      <stop offset=".04" stop-color="#1494a8"/>
+      <stop offset=".09" stop-color="#005b71"/>
+      <stop offset=".91" stop-color="#005b71"/>
+      <stop offset=".96" stop-color="#148495"/>
+      <stop offset="1" stop-color="#003d4b"/>
+    </linearGradient>
+    <linearGradient id="page-edge" x1="14" x2="114" y1="0" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c0bfbc"/>
+      <stop offset=".05" stop-color="#f6f5f4"/>
+      <stop offset=".43" stop-color="#deddda"/>
+      <stop offset=".50" stop-color="#b4b3b0"/>
+      <stop offset=".57" stop-color="#deddda"/>
+      <stop offset=".95" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c0bfbc"/>
+    </linearGradient>
+    <linearGradient id="left-fold" x1="52" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f6f5f4"/>
+      <stop offset="1" stop-color="#deddda"/>
+    </linearGradient>
+    <linearGradient id="right-fold" x1="64" y1="0" x2="76" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#deddda"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+  </defs>
+  <!-- The lower cover is the four-pixel front profile of the same object. -->
+  <path fill="url(#cover-edge)" d="M8 34 Q36 24 64 38 Q92 24 120 34 V108 Q120 116 112 116 H74 Q64 112 54 116 H16 Q8 116 8 108Z"/>
+  <path fill="#007b91" d="M8 30 Q36 20 64 34 Q92 20 120 30 V104 Q120 112 112 112 H74 Q64 108 54 112 H16 Q8 112 8 104Z"/>
+  <!-- Page blocks share exactly the same curves as the pages above them. -->
+  <path fill="url(#page-edge)" d="M14 30 C32 25 48 28 64 36 V110 C48 102 32 101 14 106Z"/>
+  <path fill="url(#page-edge)" d="M114 30 C96 25 80 28 64 36 V110 C80 102 96 101 114 106Z"/>
+  <path fill="url(#left-fold)" d="M14 28 C32 23 48 26 64 34 V104 C48 96 32 95 14 100Z"/>
+  <path fill="url(#right-fold)" d="M114 28 C96 23 80 26 64 34 V104 C80 96 96 95 114 100Z"/>
+  <path fill="#c01c28" d="M84 28 V110 L88 106 L92 110 V26Z"/>
+  <path fill="#ed333b" d="M84 28 V104 L88 100 L92 104 V26Z"/>
+</svg>
