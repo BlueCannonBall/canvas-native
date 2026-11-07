@@ -28,9 +28,9 @@ File actions are disabled there because the sample account has no Canvas session
   Save As…, and Open in Canvas.
 - Document links open in a separate reader window, leaving the current list in
   place. Canvas HTML links to files are routed to the same native reader.
-- Canvas-hosted external tools (LTI) launch through the Canvas module item in the
-  app-owned Chrome profile, so tools such as Codon Learning receive the existing
-  Canvas session. Non-Canvas links use the system browser.
+- Canvas-hosted external tools (LTI) launch through their Canvas module-item URL
+  in the system browser, so tools such as Codon Learning use the browser's
+  existing Canvas session.
 - Institutional login through the platform browser; no Canvas API token needed.
 - Light, dark, and system appearance.
 - Writes require confirmation and are never retried automatically.
@@ -38,7 +38,7 @@ File actions are disabled there because the sample account has no Canvas session
 ## Requirements
 
 - Rust **1.92** or newer (`rust-version` in `Cargo.toml`).
-- Chrome or Chromium for the institutional login flow and Canvas-hosted external tools.
+- Chrome or Chromium for the institutional login flow.
 - Linux: a Vulkan-capable GPU with X11 or Wayland, plus xkbcommon, fontconfig,
   FreeType, and the usual GPUI native build dependencies.
 - macOS and Windows: the code has platform-independent document, networking and
@@ -184,12 +184,9 @@ on the input platform. Virtualization and animated scrolling are separate things
   Supported images display natively. **Text & images** retains selectable PDF,
   DOCX and plain-text extraction, continuation and embedded image extraction.
   DOCX is a text preview, not a fully formatted Word page renderer.
-- **External tools:** Canvas-hosted LTI module items and Canvas links open in the
-  app-owned Chrome profile, preserving the Canvas session. Direct non-Canvas
-  links still use the system browser. Set `CANVAS_NATIVE_CHROME` to a
-  Chrome/Chromium executable if one is not found automatically. Close the
-  auxiliary Chrome window when finished so the app can refresh an expired Canvas
-  session from its profile.
+- **External tools:** Canvas-hosted LTI module items open their Canvas module-item
+  URL in the system browser. Using the module item rather than the tool's direct
+  launch URL lets the browser's existing Canvas session sign the tool in.
 - **Session persistence:** the app enables Chrome's session-restore preference so
   Canvas's session cookies survive app and browser restarts. If Canvas invalidates
   the session, the error banner offers **Sign in again** and opens the browser
@@ -330,12 +327,12 @@ it does not launch the native UI or change course/account data.
 
 ## Verification boundaries
 
-Verified for this revision: a real release build, all 111 non-ignored tests in
+Verified for this revision: a real release build, all 110 non-ignored tests in
 the release profile, formatting, Clippy with warnings denied, and
 the complete 24-operation catalog. Shared-desktop automation has been removed; this project must
 not send pointer or keyboard input to `:0` (see `AGENTS.md`).
 
-The isolated 112-test run (which includes the X11 icon test) passed. The PDF
+The isolated 111-test run (which includes the X11 icon test) passed. The PDF
 integration test now runs without Poppler and verifies real two-page hayro
 raster output, page dimensions/center colors, source and raster reuse, and cache
 deletion. Local HTTP tests verify parallel partial-module loading, targeted grade
@@ -377,10 +374,9 @@ width; the reader scrolled from page 1 to page 14 and back, and page 1 rendered
 again after its decoded image had been evicted. Fit page showed a whole page at
 58%; wheel scrolling moved continuously into page 2; typing a page number and
 pressing Go jumped to it; Download saved the PDF and showed the completion strip
-with Open and Show in folder. A module ExternalTool (Codon Learning) launched
-through its Canvas module-item URL in the app-owned Chrome profile and reached
-the signed-in Codon course page; the reader's Open in Canvas button uses the same
-launcher, and its URL construction is unit-tested. Text & images rendered
+with Open and Show in folder. A module ExternalTool (Codon Learning) now opens its
+Canvas module-item URL instead of the direct tool launch URL. The reader's Open
+in Canvas button, page links, and LTI module items all use the system browser. Text & images rendered
 extracted text; both light and dark
 appearance looked correct. The
 global navigation's top book icon is gone. The dashboard grid was checked at
@@ -399,9 +395,7 @@ the loading spinner, dark-mode skeleton contrast, and attachment-row icon
 alignment. Per-page horizontal panning above 100% and frame rate were not
 measured in that environment. The Windows executable icon and the full app still
 need a Windows build; hayro itself and its dependencies did compile for
-`x86_64-pc-windows-msvc` in a standalone check. Chrome discovery for Canvas
-tools was verified on Linux; the macOS and Windows candidate paths are
-implemented but not exercised.
+`x86_64-pc-windows-msvc` in a standalone check.
 
 ## License
 
