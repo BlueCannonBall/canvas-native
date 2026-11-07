@@ -187,8 +187,9 @@ on the input platform. Virtualization and animated scrolling are separate things
   DOCX is a text preview, not a fully formatted Word page renderer.
 - **External tools:** Canvas-hosted LTI module items open their Canvas module-item
   URL in the system browser. Using the module item rather than the tool's direct
-  launch URL lets the browser's existing Canvas session sign the tool in. Opening
-  a Canvas link minimizes the app so the system browser comes to the foreground.
+  launch URL lets the browser's existing Canvas session sign the tool in. Links
+  use the platform opener (`xdg-open` on Linux) so the browser is launched and
+  focused like any other desktop app.
 - **Session persistence:** the app enables Chrome's session-restore preference so
   Canvas's session cookies survive app and browser restarts. If Canvas invalidates
   the session, the error banner offers **Sign in again** and opens the browser

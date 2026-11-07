@@ -1292,12 +1292,45 @@ impl CanvasApp {
     fn document_canvas_url(&self, document: &DocumentSelection) -> Option<String> {
         document_canvas_url(&self.settings.origin, document)
     }
-    fn open_canvas_link(&mut self, url: &str, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_canvas_link(&mut self, url: &str, cx: &mut Context<Self>) {
         self.error = None;
-        cx.open_url(url);
-        // The system browser can open behind the always-on-top app window.
-        // Minimizing the app gives the browser the foreground reliably.
-        window.minimize_window();
+        let Ok(parsed) = url::Url::parse(url) else {
+            return;
+        };
+        if !matches!(parsed.scheme(), "http" | "https")
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+        {
+            return;
+        }
+        // Match a normal desktop launch (xdg-open / open / start). GPUI's
+        // open_url goes through the XDG portal first, which can open the
+        // browser without giving it focus. The platform opener behaves like a
+        // terminal `xdg-open` and lets the desktop focus the browser normally.
+        #[cfg(target_os = "linux")]
+        let spawned = std::process::Command::new("xdg-open")
+            .arg(url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        #[cfg(target_os = "macos")]
+        let spawned = std::process::Command::new("open")
+            .arg(url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        #[cfg(target_os = "windows")]
+        let spawned = std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        if spawned.is_err() {
+            cx.open_url(url);
+        }
     }
     fn download_document(
         &mut self,

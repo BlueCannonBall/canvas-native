@@ -349,9 +349,7 @@ impl CanvasApp {
             .label(label.to_owned())
             .small()
             .disabled(!safe)
-            .on_click(
-                cx.listener(move |this, _, window, cx| this.open_canvas_link(&url, window, cx)),
-            )
+            .on_click(cx.listener(move |this, _, _, cx| this.open_canvas_link(&url, cx)))
             .into_any_element()
     }
     fn web_text_link(
@@ -369,9 +367,7 @@ impl CanvasApp {
             .text_color(rgb(colors.link))
             .hover(|s| s.underline())
             .child(label.to_owned())
-            .on_click(
-                cx.listener(move |this, _, window, cx| this.open_canvas_link(&url, window, cx)),
-            )
+            .on_click(cx.listener(move |this, _, _, cx| this.open_canvas_link(&url, cx)))
             .into_any_element()
     }
     fn global_nav(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -2089,9 +2085,9 @@ impl CanvasApp {
                         .label("Open in Canvas")
                         .small()
                         .disabled(open_disabled)
-                        .on_click(cx.listener(move |this, _, window, cx| {
+                        .on_click(cx.listener(move |this, _, _, cx| {
                             if let Some(url) = canvas_url.as_deref() {
-                                this.open_canvas_link(url, window, cx);
+                                this.open_canvas_link(url, cx);
                             }
                         })),
                 );
@@ -2705,8 +2701,8 @@ impl CanvasApp {
                             if url::Url::parse(&url)
                                 .is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
                             {
-                                event = event.on_click(cx.listener(move |this, _, window, cx| {
-                                    this.open_canvas_link(&url, window, cx)
+                                event = event.on_click(cx.listener(move |this, _, _, cx| {
+                                    this.open_canvas_link(&url, cx)
                                 }));
                             }
                         }
