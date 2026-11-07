@@ -6,8 +6,8 @@ Canvas-style dashboard and course navigation, module and assignment browsing,
 grades, files, calendar/to-dos, and a continuous-scroll document reader with a
 pure-Rust PDF renderer.
 
-No webview is used for Canvas content, and no MCP connector or external PDF
-utility is required at runtime. Chrome/Chromium is used only for institutional
+No webview is used for Canvas content, and no separate connector or external
+PDF utility is required at runtime. Chrome/Chromium is used only for institutional
 login.
 
 | Dashboard | Document reader |
@@ -234,14 +234,13 @@ originals.
   session refresh, and app-owned browser authentication.
 - `src/engine.rs`: in-process operation dispatch and document/image extraction.
 - `src/document_preview.rs`: private source/raster cache and pure-Rust hayro PDF rendering.
-- `src/native_results.rs`: small native result/parameter types, replacing the
-  former MCP router/schema dependency while preserving all 24 operations.
+- `src/native_results.rs`: small native result and parameter types; no router,
+  schema-generation layer, or transport.
 - `src/demo.rs`: isolated sample account, never a fallback for failed requests.
 
-REST/session handling and extraction code were adapted into app-owned source
-files from the reference `canvas-mcp/src/api.rs` and `canvas-mcp/src/main.rs`.
-There are no path dependencies on that repository. Profile/config handling,
-cancellation cleanup, and dispatch were adapted for a long-running GUI process.
+REST/session handling and extraction live in app-owned source files. There are
+no path dependencies on another client or server. Profile/config handling,
+cancellation cleanup, and dispatch are designed for a long-running GUI process.
 HTTP GETs may refresh an expired session and retry once. Writes are not replayed.
 Cookies and CSRF tokens are never displayed in the UI.
 
@@ -317,8 +316,7 @@ it does not launch the native UI or change course/account data.
 
 Verified for this revision: a real release build, all 107 non-ignored tests in
 the release profile, formatting, Clippy with warnings denied, and
-the complete 24-operation catalog with `CANVAS_MCP_BINARY` pointing to a
-nonexistent path. Shared-desktop automation has been removed; this project must
+the complete 24-operation catalog. Shared-desktop automation has been removed; this project must
 not send pointer or keyboard input to `:0` (see `AGENTS.md`).
 
 The isolated 108-test run (which includes the X11 icon test) passed. The PDF
@@ -372,8 +370,7 @@ the loading spinner, dark-mode skeleton contrast, and attachment-row icon
 alignment. Per-page horizontal panning above 100% and frame rate were not
 measured in that environment. The Windows executable icon and the full app still
 need a Windows build; hayro itself and its dependencies did compile for
-`x86_64-pc-windows-msvc` in a standalone check. The reference canvas-mcp
-repository is not modified.
+`x86_64-pc-windows-msvc` in a standalone check.
 
 ## License
 

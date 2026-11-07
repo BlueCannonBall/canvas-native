@@ -1,4 +1,4 @@
-//! In-process Canvas operations and document extraction. No MCP server or subprocess is started.
+//! In-process Canvas operations and document extraction. No external server or subprocess is started.
 use crate::native_results::{
     CanvasError as ErrorData, CanvasResult as CallToolResult, Content as ContentBlock,
     OPERATION_NAMES, Parameters, ResourceContent as ResourceContents,
@@ -1228,7 +1228,7 @@ impl CanvasTool {
                 })?;
 
             let text = format!(
-                "Canvas attachment ({size_str}) exceeds the inline MCP limit ({limit_str}).\n\
+                "Canvas attachment ({size_str}) exceeds the inline attachment limit ({limit_str}).\n\
                  It was automatically downloaded to:\n  \
                  {saved_path}\n\n\
                  Filename: {filename}\n\

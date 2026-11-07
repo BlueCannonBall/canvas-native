@@ -1,4 +1,4 @@
-//! Small in-process result types. No MCP router, schema generator or transport.
+//! Small in-process result types; no router, schema generation, or transport.
 use serde::Serialize;
 use serde_json::Value;
 

@@ -1,13 +1,14 @@
 # Product requirements
 
-- This is an end-user Canvas LMS client, not a developer tool or MCP explorer.
+- This is an end-user Canvas LMS client, not a developer tool or protocol explorer.
 - Keep navigation familiar to Canvas users: Dashboard course cards, named course
   selection, course Home/Modules/Assignments/Grades/Files/Syllabus, and Calendar.
 - Never require users to type course/assignment/file IDs, page slugs, resource
   URIs, tool names, or JSON. Carry identifiers internally from selected objects.
-- canvas-mcp is a reference only. No build/runtime dependency on its executable,
-  source checkout, settings, cookies, or browser profile. The app owns its REST
-  client, authentication profile, planner operations, and document handling.
+- The app must remain self-contained: no build/runtime dependency on another
+  Canvas client's executable, source checkout, settings, cookies, or browser
+  profile. The app owns its REST client, authentication profile, planner
+  operations, and document handling.
 
 # Verification safety
 

@@ -1,4 +1,4 @@
-//! In-process worker for Canvas. No connector executable or MCP transport.
+//! In-process worker for Canvas. No connector executable or external transport.
 use crate::engine::Engine;
 use anyhow::{Context, Result, bail};
 use directories::ProjectDirs;

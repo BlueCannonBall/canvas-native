@@ -824,8 +824,8 @@ impl CanvasApi {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(60))
             .build()?;
-        // MCP initialization and discovery must never depend on Chrome, the
-        // shared profile lock, the network, or a valid authenticated session.
+        // Operation discovery must never depend on Chrome, the shared profile
+        // lock, the network, or a valid authenticated session.
         Ok(Self {
             canvas_origin,
             cookie_header: Arc::new(RwLock::new(String::new())),
@@ -3036,7 +3036,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_mcp_field_names() {
+    fn preserves_canvas_field_names() {
         let page: PageInfo = serde_json::from_value(serde_json::json!({
             "page_id": 5,
             "url": "syllabus",

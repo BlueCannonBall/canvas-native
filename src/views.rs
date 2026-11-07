@@ -2697,7 +2697,7 @@ impl CanvasApp {
                         )),
                 );
             }
-            view=view.child(box_view(cx).child(muted("Chrome/Chromium is required for sign-in. The app uses WebDriver to save a session, then makes Canvas REST requests directly. It does not require an MCP server or executable.", cx))
+            view=view.child(box_view(cx).child(muted("Chrome/Chromium is required for sign-in. The app uses WebDriver to save a session, then makes Canvas REST requests directly. It does not require a separate server or executable.", cx))
             .child(muted(self.error.clone().unwrap_or_else(||"No connection error to report.".into()), cx)));
         }
         view.into_any_element()
