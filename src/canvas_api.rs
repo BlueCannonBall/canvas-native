@@ -32,6 +32,127 @@ fn chrome_profile_dir() -> anyhow::Result<std::path::PathBuf> {
     Ok(config_dir()?.join("chrome-profile"))
 }
 
+fn canvas_browser_target(canvas_origin: &str, url: &str) -> anyhow::Result<reqwest::Url> {
+    let origin = reqwest::Url::parse(canvas_origin)?;
+    let target = reqwest::Url::parse(url).or_else(|_| origin.join(url))?;
+    if !matches!(target.scheme(), "http" | "https")
+        || !target.username().is_empty()
+        || target.password().is_some()
+    {
+        anyhow::bail!("Canvas links must use an HTTP(S) URL without credentials");
+    }
+    if target.scheme() != origin.scheme()
+        || target.host_str() != origin.host_str()
+        || target.port_or_known_default() != origin.port_or_known_default()
+    {
+        anyhow::bail!("only Canvas-hosted links open in the Canvas browser profile");
+    }
+    Ok(target)
+}
+
+/// Whether a link belongs to the configured Canvas origin. External links keep
+/// using the system browser; Canvas links need the app-owned Chrome profile so
+/// LTI tools launch with the existing Canvas session.
+pub fn is_canvas_url(canvas_origin: &str, url: &str) -> bool {
+    canvas_browser_target(canvas_origin, url).is_ok()
+}
+
+fn find_on_path(name: &str) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|directory| directory.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
+fn browser_candidates() -> Vec<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(browser) = std::env::var_os("CANVAS_NATIVE_CHROME") {
+        candidates.push(browser.into());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        for name in [
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+            "brave-browser",
+            "microsoft-edge",
+        ] {
+            if let Some(browser) = find_on_path(name) {
+                candidates.push(browser);
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        for path in [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ] {
+            candidates.push(path.into());
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        for name in ["chrome.exe", "msedge.exe"] {
+            if let Some(browser) = find_on_path(name) {
+                candidates.push(browser);
+            }
+        }
+        if let Some(program_files) = std::env::var_os("PROGRAMFILES") {
+            candidates.push(
+                std::path::PathBuf::from(program_files)
+                    .join("Google/Chrome/Application/chrome.exe"),
+            );
+        }
+        if let Some(program_files) = std::env::var_os("PROGRAMFILES(X86)") {
+            candidates.push(
+                std::path::PathBuf::from(program_files)
+                    .join("Google/Chrome/Application/chrome.exe"),
+            );
+        }
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            candidates.push(
+                std::path::PathBuf::from(local_app_data)
+                    .join("Google/Chrome/Application/chrome.exe"),
+            );
+        }
+    }
+    candidates
+}
+
+/// Open a Canvas-hosted link in Chrome using the same profile and cookies as the
+/// app's authentication flow. This is required for LTI tools that must be
+/// launched through Canvas rather than by opening their direct launch URL.
+pub fn open_canvas_url(canvas_origin: &str, url: &str) -> anyhow::Result<()> {
+    let target = canvas_browser_target(canvas_origin, url)?;
+    let profile = chrome_profile_dir()?;
+    std::fs::create_dir_all(&profile)?;
+    let browser = browser_candidates()
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No Chrome or Chromium was found. Install one or set CANVAS_NATIVE_CHROME."
+            )
+        })?;
+    let mut command = std::process::Command::new(&browser);
+    command
+        .arg(format!("--user-data-dir={}", profile.display()))
+        .arg("--new-window")
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .arg(target.as_str())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    command
+        .spawn()
+        .map_err(|error| anyhow::anyhow!("Could not open Canvas in Chrome: {error}"))?;
+    Ok(())
+}
+
 fn next_link(header: Option<&reqwest::header::HeaderValue>) -> anyhow::Result<Option<String>> {
     let Some(header) = header else {
         return Ok(None);
@@ -3380,6 +3501,36 @@ mod tests {
                 .as_str(),
             "https://canvas.example.edu/files/10/download"
         );
+    }
+
+    #[test]
+    fn canvas_browser_links_must_stay_on_the_configured_origin() {
+        let origin = "https://canvas.example.edu";
+        assert_eq!(
+            canvas_browser_target(origin, "/courses/4/modules/items/5")
+                .unwrap()
+                .as_str(),
+            "https://canvas.example.edu/courses/4/modules/items/5"
+        );
+        assert_eq!(
+            canvas_browser_target(
+                origin,
+                "https://canvas.example.edu/courses/4/modules/items/5"
+            )
+            .unwrap()
+            .as_str(),
+            "https://canvas.example.edu/courses/4/modules/items/5"
+        );
+        assert!(!is_canvas_url(origin, "https://lti.tool.test/launch"));
+        assert!(!is_canvas_url(
+            origin,
+            "https://other.example.edu/courses/4"
+        ));
+        assert!(!is_canvas_url(origin, "javascript:alert(1)"));
+        assert!(!is_canvas_url(
+            origin,
+            "https://user:secret@canvas.example.edu/courses/4"
+        ));
     }
 
     #[test]

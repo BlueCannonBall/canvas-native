@@ -1267,6 +1267,20 @@ impl CanvasApp {
     fn document_canvas_url(&self, document: &DocumentSelection) -> Option<String> {
         document_canvas_url(&self.settings.origin, document)
     }
+    /// Canvas-hosted links need the app-owned Chrome profile so LTI tools see
+    /// the existing Canvas session. Ordinary external links use the system
+    /// browser as before.
+    fn open_canvas_link(&mut self, url: &str, cx: &mut Context<Self>) {
+        self.error = None;
+        if crate::engine::is_canvas_url(&self.settings.origin, url) {
+            if let Err(error) = crate::engine::open_canvas_url(&self.settings.origin, url) {
+                self.error = Some(format!("Could not open this Canvas page or tool: {error}"));
+                cx.notify();
+            }
+        } else {
+            cx.open_url(url);
+        }
+    }
     fn download_document(
         &mut self,
         document: &DocumentSelection,

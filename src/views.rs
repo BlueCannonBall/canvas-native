@@ -330,7 +330,13 @@ impl CanvasApp {
                 .into_any_element(),
         )
     }
-    fn web_link(&self, id: impl Into<SharedString>, label: &str, url: &str) -> AnyElement {
+    fn web_link(
+        &self,
+        id: impl Into<SharedString>,
+        label: &str,
+        url: &str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let url = url.to_owned();
         let safe = url::Url::parse(&url).is_ok_and(|u| {
             matches!(u.scheme(), "http" | "https")
@@ -341,7 +347,7 @@ impl CanvasApp {
             .label(label.to_owned())
             .small()
             .disabled(!safe)
-            .on_click(move |_, _, cx| cx.open_url(&url))
+            .on_click(cx.listener(move |this, _, _, cx| this.open_canvas_link(&url, cx)))
             .into_any_element()
     }
     fn web_text_link(
@@ -359,7 +365,7 @@ impl CanvasApp {
             .text_color(rgb(colors.link))
             .hover(|s| s.underline())
             .child(label.to_owned())
-            .on_click(move |_, _, cx| cx.open_url(&url))
+            .on_click(cx.listener(move |this, _, _, cx| this.open_canvas_link(&url, cx)))
             .into_any_element()
     }
     fn global_nav(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -927,7 +933,7 @@ impl CanvasApp {
         } else {
             body = body.child(div().font_weight(FontWeight::MEDIUM).child(title));
             if let Some(url) = item["html_url"].as_str() {
-                body = body.child(self.web_link(format!("{id}-web"), "Open in Canvas", url));
+                body = body.child(self.web_link(format!("{id}-web"), "Open in Canvas", url, cx));
             }
         }
         let course_name = if course.is_empty() {
@@ -1074,7 +1080,7 @@ impl CanvasApp {
                 },
                 "feed" => return box_view(cx).child(heading("Course activity"))
                     .child(muted("This course uses Canvas’s activity stream. Open it in Canvas to see discussions and recent activity.",cx))
-                    .child(self.web_link("home-activity", "Open course activity in Canvas", &format!("{}/courses/{id}",self.settings.origin.trim_end_matches('/')))).into_any_element(),
+                    .child(self.web_link("home-activity", "Open course activity in Canvas", &format!("{}/courses/{id}",self.settings.origin.trim_end_matches('/')), cx)).into_any_element(),
                 _ => {},
             }
         }
@@ -1416,7 +1422,8 @@ impl CanvasApp {
         view = view.child(meta);
         let mut actions = div().flex().flex_wrap().gap_3();
         if let Some(url) = assignment["html_url"].as_str() {
-            actions = actions.child(self.web_link("submit-online", "Open / Submit in Canvas", url));
+            actions =
+                actions.child(self.web_link("submit-online", "Open / Submit in Canvas", url, cx));
         }
         let linked = json!({"id":id,"kind":"assignment","title":field(assignment,"name")});
         actions = actions.child(
@@ -2062,9 +2069,9 @@ impl CanvasApp {
                         .label("Open in Canvas")
                         .small()
                         .disabled(open_disabled)
-                        .on_click(cx.listener(move |_, _, _, cx| {
+                        .on_click(cx.listener(move |this, _, _, cx| {
                             if let Some(url) = canvas_url.as_deref() {
-                                cx.open_url(url);
+                                this.open_canvas_link(url, cx);
                             }
                         })),
                 );
@@ -2359,7 +2366,7 @@ impl CanvasApp {
             cx,
         ));
         if let Some(url) = page["html_url"].as_str() {
-            view = view.child(self.web_link("page-online", "Open page in Canvas", url));
+            view = view.child(self.web_link("page-online", "Open page in Canvas", url, cx));
         }
         view.into_any_element()
     }

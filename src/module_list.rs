@@ -56,14 +56,13 @@ impl ModuleIndex {
                             ModuleTarget::None
                         } else if let Some(route) = model::module_route(course, item) {
                             ModuleTarget::Native(route)
-                        } else if let Some(url) = item["external_url"]
-                            .as_str()
-                            .or(item["html_url"].as_str())
-                            .filter(|u| safe_url(u))
-                        {
-                            ModuleTarget::Web(url.into())
+                        } else if kind == "ExternalTool" {
+                            // An LTI launch must go through Canvas so the tool
+                            // receives the Canvas session. The direct tool URL
+                            // is not usable on its own.
+                            web_target(item, &["html_url", "external_url"])
                         } else {
-                            ModuleTarget::None
+                            web_target(item, &["external_url", "html_url"])
                         };
                         let details = &item["content_details"];
                         let row = ModuleRow::Item {
@@ -130,6 +129,16 @@ impl ModuleIndex {
         rows
     }
 }
+fn web_target(item: &Value, keys: &[&str]) -> ModuleTarget {
+    keys.iter()
+        .find_map(|key| {
+            item[*key]
+                .as_str()
+                .filter(|url| safe_url(url))
+                .map(|url| ModuleTarget::Web(url.into()))
+        })
+        .unwrap_or(ModuleTarget::None)
+}
 fn safe_url(value: &str) -> bool {
     url::Url::parse(value).is_ok_and(|u| {
         matches!(u.scheme(), "http" | "https") && u.username().is_empty() && u.password().is_none()
@@ -159,6 +168,21 @@ mod tests {
         );
         assert!(
             matches!(&rows[3],ModuleRow::Item{target:ModuleTarget::Native(Route::Assignment{course,id}),..} if course=="4"&&id=="77")
+        );
+    }
+    #[test]
+    fn external_tools_launch_through_canvas_not_the_direct_tool_url() {
+        let response = json!({"modules":[{"id":"10","name":"Tools","items":[
+            {"title":"Codon","item_type":"ExternalTool","html_url":"https://canvas.test/courses/4/modules/items/5","external_url":"https://lti.tool.test/launch"},
+            {"title":"Video","item_type":"ExternalUrl","html_url":"https://canvas.test/api/v1/courses/4/module_item_redirect/6","external_url":"https://video.test/watch"}
+        ]}]});
+        let index = ModuleIndex::new("4", &response);
+        let rows = index.rows("", &HashMap::new());
+        assert!(
+            matches!(&rows[1], ModuleRow::Item { target: ModuleTarget::Web(url), .. } if url == "https://canvas.test/courses/4/modules/items/5")
+        );
+        assert!(
+            matches!(&rows[2], ModuleRow::Item { target: ModuleTarget::Web(url), .. } if url == "https://video.test/watch")
         );
     }
     #[test]
