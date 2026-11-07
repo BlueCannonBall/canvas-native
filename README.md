@@ -379,6 +379,9 @@ repository is not modified.
 
 MIT. See [LICENSE](LICENSE).
 
+Canvas is a trademark of Instructure, Inc. This project is not affiliated with
+or endorsed by Instructure.
+
 ## Acknowledgements
 
 - [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) and
