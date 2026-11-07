@@ -604,12 +604,25 @@ impl CanvasApp {
         let backend = self.backend.clone();
         let demo = self.demo;
         let title = format!("{} — Canvas Native", document.title);
-        let bounds = Bounds::centered(None, size(px(1120.), px(900.)), cx);
+        // Keep the reader inside the usable display area. A fixed 1120x900
+        // window is wider than a scaled Windows laptop display, which pushes
+        // the toolbar controls off-screen.
+        let (width, height) = cx
+            .primary_display()
+            .map(|display| {
+                let bounds = display.bounds();
+                (
+                    (f32::from(bounds.size.width) * 0.8).clamp(640., 1000.),
+                    (f32::from(bounds.size.height) * 0.8).clamp(480., 780.),
+                )
+            })
+            .unwrap_or((960., 740.));
+        let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
         let opened = cx.open_window(
             WindowOptions {
                 app_id: Some(crate::window_icon::APP_ID.into()),
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(720.), px(520.))),
+                window_min_size: Some(size(px(600.), px(420.))),
                 titlebar: Some(TitlebarOptions {
                     title: Some(title.into()),
                     ..Default::default()

@@ -127,10 +127,10 @@ on the input platform. Virtualization and animated scrolling are separate things
 
 ## Using the client
 
-- **Dashboard:** course cards open course Home pages. Cards have direct Modules,
-  Assignments, and Grades shortcuts in equal-width columns. Upcoming work appears
-  in the To Do sidebar. Courses and upcoming work load automatically; there is no
-  request form.
+- **Dashboard:** course cards open course Home pages. Cards use a fixed 320 px
+  column grid so partial rows stay aligned, with direct Modules, Assignments, and
+  Grades shortcuts in equal-width columns. Upcoming work appears in the To Do
+  sidebar. Courses and upcoming work load automatically; there is no request form.
 - **Courses:** the global button opens a Canvas-style course drawer without
   changing the current page. Select a course, use **All Courses** to browse current
   and past enrollments, or dismiss with Close, Escape, or a click outside. Within a course, use
@@ -383,9 +383,14 @@ the signed-in Codon course page; the reader's Open in Canvas button uses the sam
 launcher, and its URL construction is unit-tested. Text & images rendered
 extracted text; both light and dark
 appearance looked correct. The
-global navigation's top book icon is gone. Course cards were checked at 1280 and
-940 window widths: the three shortcut buttons occupy equal thirds, and the
-rounded corners use a shadow edge with no stepped gray border ring. Plain Xvfb
+global navigation's top book icon is gone. The dashboard grid was checked at
+1500 and 1152 window widths: cards are 320 px wide, three equal columns at 1500
+and two at 1152, and a partial final row keeps the same card width. The three
+shortcut buttons occupy equal thirds without clipping. Main and reader windows
+are clamped to the display: on a 1280×720 display the main window opened at
+1152×648 and the reader at 1000×576; at a 640×480 reader size the toolbar wrapped
+to two rows instead of extending off-screen. Rounded corners use a shadow edge
+with no stepped gray border ring. Plain Xvfb
 has no DRI3, so Vulkan presentation fails there; the working recipe is
 `WESTON_HEADLESS=1 weston --backend=headless --renderer=gl
 --width=1800 --height=1100 --socket=wayland-99 --xwayland --no-config` and

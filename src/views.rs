@@ -758,19 +758,18 @@ impl CanvasApp {
             let mut shortcuts = div()
                 .flex()
                 .justify_between()
-                .gap_3()
+                .gap_2()
                 .pt_3()
                 .border_t_1()
                 .border_color(rgb(colors.border));
-            for (label, icon, tab) in [
-                ("Modules", IconName::BookOpen, CourseTab::Modules),
-                ("Assignments", IconName::File, CourseTab::Assignments),
-                ("Grades", IconName::ChartPie, CourseTab::Grades),
+            for (label, tab) in [
+                ("Modules", CourseTab::Modules),
+                ("Assignments", CourseTab::Assignments),
+                ("Grades", CourseTab::Grades),
             ] {
                 shortcuts = shortcuts.child(
                     div().flex_1().min_w_0().child(
                         Button::new(SharedString::from(format!("card-{id}-{label}")))
-                            .icon(icon)
                             .label(label)
                             .small()
                             .w_full()
@@ -813,10 +812,11 @@ impl CanvasApp {
             header.style().corner_radii.top_right = Some(px(6.).into());
             cards = cards.child(
                 div()
-                    .w(px(292.))
-                    .flex_grow()
-                    .max_w(px(390.))
-                    .min_w(px(255.))
+                    // A fixed card width keeps every row on the same column
+                    // grid. Flex-grow made the final, partially filled row
+                    // wider than the rows above it.
+                    .w(px(320.))
+                    .flex_shrink_0()
                     // A border on this rounded card leaves a stepped gray ring
                     // where the child header meets the corner. A shadow keeps
                     // the edge clean in both themes.

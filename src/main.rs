@@ -109,12 +109,22 @@ fn main() -> anyhow::Result<()> {
                 .detach();
             })
             .detach();
-            let bounds = Bounds::centered(None, size(px(1280.), px(860.)), cx);
+            let (width, height) = cx
+                .primary_display()
+                .map(|display| {
+                    let bounds = display.bounds();
+                    (
+                        (f32::from(bounds.size.width) * 0.9).clamp(760., 1500.),
+                        (f32::from(bounds.size.height) * 0.9).clamp(480., 900.),
+                    )
+                })
+                .unwrap_or((1100., 760.));
+            let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
             cx.open_window(
                 WindowOptions {
                     app_id: Some(window_icon::APP_ID.into()),
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    window_min_size: Some(size(px(940.), px(640.))),
+                    window_min_size: Some(size(px(760.), px(480.))),
                     titlebar: Some(TitlebarOptions {
                         title: Some("Canvas Native".into()),
                         ..Default::default()
