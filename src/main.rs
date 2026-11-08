@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
+
 mod app;
 mod appearance;
 mod backend;
@@ -11,6 +16,8 @@ mod module_list;
 mod native_results;
 mod schema;
 mod window_icon;
+#[cfg(target_os = "windows")]
+mod windows_browser;
 
 use gpui::{
     App, AppContext, Application, Bounds, KeyBinding, TitlebarOptions, WindowBounds, WindowOptions,

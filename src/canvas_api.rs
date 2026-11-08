@@ -551,7 +551,24 @@ async fn canvas_driver(
         caps.set_headless()?;
     }
 
-    let driver = WebDriver::managed(caps)
+    #[cfg(target_os = "windows")]
+    {
+        let (binary, version) =
+            tokio::task::spawn_blocking(crate::windows_browser::installed_chrome).await??;
+        caps.set_binary(
+            binary
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("The installed Chrome path is not valid UTF-8"))?,
+        )?;
+        // from_caps reads the W3C key; set_version writes legacy "version".
+        caps.set("browserVersion", &version)?;
+    }
+    let manager = WebDriver::managed(caps);
+    // Avoid thirtyfour's console-spawning Windows browser detection. We have
+    // already resolved the installed binary and its matching version above.
+    #[cfg(target_os = "windows")]
+    let manager = manager.from_caps();
+    let driver = manager
         .poller(Arc::new(ElementPollerWithTimeout::new(
             Duration::from_millis(5000),
             Duration::from_millis(500),
