@@ -9,8 +9,9 @@
 //! than failing the screen.
 
 use crate::model::{self, Route};
-use chrono::NaiveDate;
+use chrono::{DateTime, FixedOffset, NaiveDate};
 use serde_json::Value;
+use std::cmp::Reverse;
 
 /// An empty search matches every row without lowercasing every title on every
 /// frame; the caller already lowercases a non-empty query.
@@ -46,6 +47,14 @@ pub enum ContentRow {
         due: String,
         points: String,
         status: &'static str,
+    },
+    Announcement {
+        course: String,
+        id: String,
+        title: String,
+        author: String,
+        posted: String,
+        unread: bool,
     },
     Grade {
         course: String,
@@ -139,6 +148,45 @@ pub fn assignment_rows(
             due: model::date_label(assignment["due_at"].as_str().unwrap_or("")),
             points: model::field(assignment, "points_possible"),
             status: model::status(assignment),
+        })
+        .collect()
+}
+
+fn announcement_posted_at(value: &Value) -> &str {
+    ["posted_at", "delayed_post_at", "created_at"]
+        .into_iter()
+        .find_map(|key| value.get(key).and_then(Value::as_str))
+        .unwrap_or("")
+}
+
+fn announcement_time(value: &Value) -> Option<DateTime<FixedOffset>> {
+    DateTime::parse_from_rfc3339(announcement_posted_at(value)).ok()
+}
+
+/// Announcements are newest first, matching the course Announcements page.
+pub fn announcement_rows(course: &str, data: &Value, query: &str) -> Vec<ContentRow> {
+    let mut items = model::list(Some(data), "announcements");
+    items.sort_by_cached_key(|value| Reverse(announcement_time(value)));
+    items
+        .into_iter()
+        .filter(|value| contains_query(&model::field(value, "title"), query))
+        .map(|announcement| {
+            let posted_at = announcement_posted_at(announcement);
+            ContentRow::Announcement {
+                course: course.into(),
+                id: model::field(announcement, "id"),
+                title: model::field(announcement, "title"),
+                author: model::field(&announcement["author"], "display_name"),
+                posted: if posted_at.is_empty() {
+                    String::new()
+                } else {
+                    model::date_label(posted_at)
+                },
+                unread: model::field(announcement, "read_state") == "unread"
+                    || announcement["unread_count"]
+                        .as_u64()
+                        .is_some_and(|count| count > 0),
+            }
         })
         .collect()
 }
@@ -252,6 +300,31 @@ mod tests {
 
         let searched = assignment_rows("4", &data, "later", "All", day("2026-11-08"));
         assert_eq!(searched.len(), 1);
+    }
+
+    #[test]
+    fn announcement_rows_are_newest_first_and_searchable() {
+        let data = json!({"announcements": [
+            {"id": "1", "title": "Older update", "posted_at": "2026-11-01T12:00:00Z", "author": {"display_name": "Dr. Chen"}},
+            {"id": "2", "title": "Lab moved", "posted_at": "2026-11-06T12:00:00Z", "author": {"display_name": "Dr. Chen"}, "read_state": "unread"},
+            {"id": "3", "title": "Undated notice", "author": {"display_name": "Registrar"}},
+        ]});
+        let rows = announcement_rows("42", &data, "");
+        assert_eq!(rows.len(), 3);
+        assert!(
+            matches!(&rows[0], ContentRow::Announcement { id, posted, unread, .. } if id == "2" && !posted.is_empty() && *unread)
+        );
+        assert!(matches!(&rows[1], ContentRow::Announcement { id, .. } if id == "1"));
+        assert!(
+            matches!(&rows[2], ContentRow::Announcement { id, posted, .. } if id == "3" && posted.is_empty()),
+            "announcements without a post date stay last"
+        );
+
+        let searched = announcement_rows("42", &data, "lab");
+        assert_eq!(searched.len(), 1);
+        assert!(
+            matches!(&searched[0], ContentRow::Announcement { author, .. } if author == "Dr. Chen")
+        );
     }
 
     #[test]

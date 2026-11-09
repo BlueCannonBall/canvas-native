@@ -486,6 +486,7 @@ impl CanvasApp {
             );
         for tab in [
             CourseTab::Home,
+            CourseTab::Announcements,
             CourseTab::Modules,
             CourseTab::Assignments,
             CourseTab::Grades,
@@ -494,7 +495,9 @@ impl CanvasApp {
         ] {
             let active = matches!(&self.route,Route::Course{tab:t,..}if *t==tab)
                 || matches!(tab, CourseTab::Assignments)
-                    && matches!(self.route, Route::Assignment { .. });
+                    && matches!(self.route, Route::Assignment { .. })
+                || matches!(tab, CourseTab::Announcements)
+                    && matches!(self.route, Route::Announcement { .. });
             let route = Route::Course { id: id.into(), tab };
             nav = nav.child(
                 div()
@@ -632,6 +635,14 @@ impl CanvasApp {
                 .map(|v| field(&v["assignment"], "name"))
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "Assignment".into()),
+            Route::Announcement { course, id } => self
+                .get(
+                    "announcement_info",
+                    json!({"course_id":course,"announcement_id":id}),
+                )
+                .map(|v| field(&v["announcement"], "title"))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "Announcement".into()),
             Route::Page { course, slug } => self
                 .get("page_info", json!({"course_id":course,"page_url":slug}))
                 .map(|v| field(&v["page"], "title"))
@@ -670,6 +681,8 @@ impl CanvasApp {
             "module_list" => "Loading course modules",
             "assignment_info" => "Opening assignment",
             "assignment_list" => "Loading assignments",
+            "announcement_info" => "Opening announcement",
+            "announcement_list" => "Loading announcements",
             "course_info" | "course_front_page" => "Opening your course",
             "course_grades" | "grade_summary" => "Loading grades",
             "document_preview" => "Preparing your document",
@@ -1516,6 +1529,61 @@ impl CanvasApp {
                     .child(badge(status, cx))
                     .into_any_element()
             }
+            ContentRow::Announcement {
+                course,
+                id,
+                title,
+                author,
+                posted,
+                unread,
+            } => {
+                let first = !matches!(previous, Some(ContentRow::Announcement { .. }));
+                let last = !matches!(next, Some(ContentRow::Announcement { .. }));
+                let mut row = div()
+                    .px_5()
+                    .py_4()
+                    .flex()
+                    .gap_4()
+                    .items_start()
+                    .border_l_1()
+                    .border_r_1()
+                    .border_b_1()
+                    .border_color(rgb(colors.border));
+                if first {
+                    row = row.border_t_1().rounded_t_sm();
+                }
+                if last {
+                    row = row.rounded_b_sm();
+                }
+                let meta = [author, posted]
+                    .into_iter()
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("  ·  ");
+                let mut body =
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(self.route_link(
+                            format!("announcement-{id}"),
+                            &title,
+                            Route::Announcement { course, id },
+                            cx,
+                        ));
+                if !meta.is_empty() {
+                    body = body.child(muted(meta, cx));
+                }
+                row = row
+                    .child(icon_slot(IconName::Inbox, rgb(colors.link)))
+                    .child(body);
+                if unread {
+                    row = row.child(badge("Unread", cx));
+                }
+                row.into_any_element()
+            }
             ContentRow::Grade {
                 course,
                 id,
@@ -1750,6 +1818,112 @@ impl CanvasApp {
                     .into_any_element()
             }
         }
+    }
+    fn announcements(&mut self, id: &str, cx: &mut Context<Self>) -> AnyElement {
+        let Some(data) = self.get("announcement_list", json!({"course_id":id})) else {
+            return self.loading("announcement_list", json!({"course_id":id}), cx);
+        };
+        let query = self.search.read(cx).value().to_lowercase();
+        let announcements = crate::content_rows::announcement_rows(id, data, &query);
+        if announcements.is_empty() {
+            return box_view(cx)
+                .child(muted("No announcements match this view.", cx))
+                .into_any_element();
+        }
+        self.virtual_rows(announcements, cx)
+    }
+    fn announcement_detail(
+        &mut self,
+        course: &str,
+        id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let args = json!({"course_id":course,"announcement_id":id});
+        let Some(data) = self.get("announcement_info", args.clone()) else {
+            return self.loading("announcement_info", args, cx);
+        };
+        let announcement = &data["announcement"];
+        let title = field(announcement, "title");
+        let posted = ["posted_at", "delayed_post_at", "created_at"]
+            .into_iter()
+            .find_map(|key| announcement[key].as_str())
+            .unwrap_or("");
+        let author = announcement["author"]["display_name"]
+            .as_str()
+            .unwrap_or("")
+            .to_owned();
+        let mut view = div()
+            .flex()
+            .flex_col()
+            .gap_5()
+            .child(heading(if title.is_empty() {
+                "Announcement".into()
+            } else {
+                title.clone()
+            }));
+        let meta = [
+            author,
+            if posted.is_empty() {
+                String::new()
+            } else {
+                model::date_label(posted)
+            },
+        ]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("  ·  ");
+        if !meta.is_empty() {
+            view = view.child(muted(meta, cx));
+        }
+        if let Some(reason) = announcement["lock_explanation"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+        {
+            view = view.child(muted(crate::html_content::notice_text(reason), cx));
+        }
+        let body = field(announcement, "body_html");
+        if body.trim().is_empty() {
+            view = view.child(muted("This announcement has no message.", cx));
+        } else {
+            view = view.child(self.canvas_body(
+                format!("announcement-body-{course}-{id}"),
+                &body,
+                course,
+                window,
+                cx,
+            ));
+        }
+        let attachments = model::list(Some(announcement), "attachments");
+        if !attachments.is_empty() {
+            let mut files =
+                box_view(cx).child(div().font_weight(FontWeight::SEMIBOLD).child("Attachments"));
+            for (index, file) in attachments.iter().enumerate() {
+                files = files.child(self.attachment_row(
+                    file,
+                    Some(course),
+                    &format!("announcement-file-{index}"),
+                    cx,
+                ));
+            }
+            view = view.child(files);
+        }
+        let mut actions = div().flex().flex_wrap().gap_3();
+        if let Some(url) = announcement["html_url"].as_str() {
+            actions =
+                actions.child(self.web_link("announcement-online", "Open in Canvas", url, cx));
+        }
+        let linked = json!({"id":id,"kind":"announcement","title":title});
+        actions = actions.child(
+            Button::new("announcement-reminder")
+                .label("Add to To Do")
+                .small()
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.open_note(None, Some(linked.clone()), window, cx)
+                })),
+        );
+        view.child(rule(cx)).child(actions).into_any_element()
     }
     fn assignments(&mut self, id: &str, cx: &mut Context<Self>) -> AnyElement {
         let Some(data) = self.get("assignment_list", json!({"course_id":id})) else {
@@ -3221,6 +3395,7 @@ impl Render for CanvasApp {
                 self.route,
                 Route::Account
                     | Route::Assignment { .. }
+                    | Route::Announcement { .. }
                     | Route::Page { .. }
                     | Route::Document { .. }
                     | Route::Note(_)
@@ -3391,12 +3566,16 @@ impl Render for CanvasApp {
             Route::Course { id, tab } => match tab {
                 CourseTab::Home => self.course_home(&id, false, window, cx),
                 CourseTab::Syllabus => self.course_home(&id, true, window, cx),
+                CourseTab::Announcements => self.announcements(&id, cx),
                 CourseTab::Modules => self.modules(&id, cx),
                 CourseTab::Assignments => self.assignments(&id, cx),
                 CourseTab::Grades => self.grades(Some(&id), cx),
                 CourseTab::Files => self.files(&id, cx),
             },
             Route::Assignment { course, id } => self.assignment_detail(&course, &id, window, cx),
+            Route::Announcement { course, id } => {
+                self.announcement_detail(&course, &id, window, cx)
+            }
             Route::Page { course, slug } => self.page_detail(&course, &slug, window, cx),
             Route::File { course, id } => self.file_detail(&course, &id, window, cx),
             Route::Document {

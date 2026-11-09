@@ -42,6 +42,12 @@ struct ModuleAndAssignmentListParams {
 }
 
 #[derive(Debug, serde::Deserialize)]
+struct AnnouncementInfoParams {
+    course_id: String,
+    announcement_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum DashboardFilter {
     NewActivity,
@@ -743,9 +749,11 @@ mod tests {
 
     #[test]
     fn native_operation_catalog_preserves_reference_features() {
-        assert_eq!(OPERATION_NAMES.len(), 24);
+        assert_eq!(OPERATION_NAMES.len(), 26);
         assert!(OPERATION_NAMES.contains(&"dashboard_items"));
         assert!(OPERATION_NAMES.contains(&"create_planner_note"));
+        assert!(OPERATION_NAMES.contains(&"announcement_list"));
+        assert!(OPERATION_NAMES.contains(&"announcement_info"));
     }
 }
 
@@ -832,6 +840,39 @@ impl CanvasTool {
 
         Ok(CallToolResult::structured(serde_json::json!({
             "assignments": res
+        })))
+    }
+
+    async fn announcement_list(
+        &self,
+        Parameters(p): Parameters<ModuleAndAssignmentListParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let res = self.api.announcements(&p.course_id).await.map_err(|e| {
+            ErrorData::internal_error(format!("Failed to fetch Canvas announcements: {e}"), None)
+        })?;
+
+        Ok(CallToolResult::structured(serde_json::json!({
+            "announcements": res
+        })))
+    }
+
+    async fn announcement_info(
+        &self,
+        Parameters(AnnouncementInfoParams {
+            course_id,
+            announcement_id,
+        }): Parameters<AnnouncementInfoParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let res = self
+            .api
+            .announcement_info(&course_id, &announcement_id)
+            .await
+            .map_err(|e| {
+                ErrorData::internal_error(format!("Failed to fetch Canvas announcement: {e}"), None)
+            })?;
+
+        Ok(CallToolResult::structured(serde_json::json!({
+            "announcement": res
         })))
     }
 
@@ -1338,6 +1379,16 @@ impl Engine {
             "assignment_list" => {
                 self.tools
                     .assignment_list(Parameters(serde_json::from_value(arguments)?))
+                    .await
+            }
+            "announcement_info" => {
+                self.tools
+                    .announcement_info(Parameters(serde_json::from_value(arguments)?))
+                    .await
+            }
+            "announcement_list" => {
+                self.tools
+                    .announcement_list(Parameters(serde_json::from_value(arguments)?))
                     .await
             }
             "attachment_download" => {

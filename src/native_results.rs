@@ -105,6 +105,8 @@ impl ResourceResult {
 }
 
 pub const OPERATION_NAMES: &[&str] = &[
+    "announcement_info",
+    "announcement_list",
     "assignment_grade",
     "assignment_info",
     "assignment_list",
@@ -162,8 +164,9 @@ mod tests {
     #[test]
     fn operation_names_cover_unique_reference_actions() {
         let names: std::collections::HashSet<_> = OPERATION_NAMES.iter().collect();
-        assert_eq!(names.len(), 24);
+        assert_eq!(names.len(), 26);
         assert!(names.contains(&"attachment_download"));
         assert!(names.contains(&"create_custom_planner_item"));
+        assert!(names.contains(&"announcement_list"));
     }
 }

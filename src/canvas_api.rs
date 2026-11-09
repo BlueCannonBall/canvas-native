@@ -1438,6 +1438,41 @@ impl CanvasApi {
             .await
     }
 
+    pub async fn announcements(&self, course_id: &str) -> anyhow::Result<Vec<Announcement>> {
+        validate_numeric_id("course", course_id)?;
+        let params = vec![
+            ("only_announcements", "true".into()),
+            ("per_page", "100".into()),
+        ];
+        let mut announcements: Vec<Announcement> = self
+            .api_get_paginated(
+                &format!("/api/v1/courses/{course_id}/discussion_topics"),
+                &params,
+            )
+            .await?;
+        for announcement in &mut announcements {
+            announcement.prepare_resources(&self.canvas_origin)?;
+        }
+        Ok(announcements)
+    }
+
+    pub async fn announcement_info(
+        &self,
+        course_id: &str,
+        announcement_id: &str,
+    ) -> anyhow::Result<Announcement> {
+        validate_numeric_id("course", course_id)?;
+        validate_numeric_id("announcement", announcement_id)?;
+        let mut announcement: Announcement = self
+            .api_get(
+                &format!("/api/v1/courses/{course_id}/discussion_topics/{announcement_id}"),
+                &[],
+            )
+            .await?;
+        announcement.prepare_resources(&self.canvas_origin)?;
+        Ok(announcement)
+    }
+
     pub async fn create_planner_note(
         &self,
         payload: &CreatePlannerNotePayload,
@@ -1990,6 +2025,45 @@ pub struct AssignmentSummary {
     pub published: Option<bool>,
     pub locked_for_user: Option<bool>,
     pub submission: Option<AssignmentSubmission>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Announcement {
+    #[serde(deserialize_with = "id")]
+    pub id: String,
+    pub title: String,
+    #[serde(rename(deserialize = "message"))]
+    pub body_html: Option<String>,
+    pub posted_at: Option<String>,
+    pub delayed_post_at: Option<String>,
+    pub created_at: Option<String>,
+    pub last_reply_at: Option<String>,
+    pub author: Option<AnnouncementAuthor>,
+    pub html_url: Option<String>,
+    pub published: Option<bool>,
+    pub locked_for_user: Option<bool>,
+    pub lock_explanation: Option<String>,
+    pub read_state: Option<String>,
+    pub unread_count: Option<u64>,
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
+}
+
+impl Announcement {
+    fn prepare_resources(&mut self, canvas_origin: &reqwest::Url) -> anyhow::Result<()> {
+        self.attachments
+            .iter_mut()
+            .try_for_each(|attachment| attachment.prepare_resources(canvas_origin))
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AnnouncementAuthor {
+    #[serde(default, deserialize_with = "optional_id")]
+    pub id: Option<String>,
+    pub display_name: Option<String>,
+    pub avatar_image_url: Option<String>,
+    pub html_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -3127,6 +3201,43 @@ mod tests {
         assert_eq!(
             file.resource,
             "canvas-text://files/99/download?download_frd=1"
+        );
+    }
+
+    #[test]
+    fn deserializes_announcements_and_prepares_their_attachments() {
+        let mut announcement: Announcement = serde_json::from_value(serde_json::json!({
+            "id": 17,
+            "title": "Week 8 update",
+            "message": "<p>Lab moved to Thursday.</p>",
+            "posted_at": "2026-11-06T14:00:00Z",
+            "author": {"id": 3, "display_name": "Dr. Chen"},
+            "html_url": "https://canvas.example.edu/courses/42/discussion_topics/17",
+            "read_state": "unread",
+            "attachments": [{
+                "id": 99,
+                "filename": "room-map.pdf",
+                "url": "https://canvas.example.edu/files/99/download"
+            }]
+        }))
+        .unwrap();
+        announcement.prepare_resources(&example_origin()).unwrap();
+
+        assert_eq!(announcement.id, "17");
+        assert_eq!(
+            announcement.body_html.as_deref(),
+            Some("<p>Lab moved to Thursday.</p>")
+        );
+        assert_eq!(
+            announcement
+                .author
+                .as_ref()
+                .and_then(|a| a.display_name.as_deref()),
+            Some("Dr. Chen")
+        );
+        assert_eq!(
+            announcement.attachments[0].download_resource,
+            "canvas://files/99/download"
         );
     }
 

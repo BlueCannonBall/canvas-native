@@ -20,9 +20,11 @@ File actions are disabled there because the sample account has no Canvas session
 ## Features
 
 - Familiar Canvas navigation: Dashboard, Courses, Calendar, Grades, Account, and
-  per-course Home, Modules, Assignments, Grades, Files, and Syllabus.
-- Virtualized lists for modules, assignments, grades, files, and the calendar
-  agenda, with the page heading and search pinned above the scrolling rows.
+  per-course Home, Announcements, Modules, Assignments, Grades, Files, and Syllabus.
+- Course announcements with author and post date, rendered Canvas bodies and
+  attachments, and links from the calendar/to-do list into the native detail view.
+- Virtualized lists for modules, announcements, assignments, grades, files, and
+  the calendar agenda, with the page heading and search pinned above the scrolling rows.
 - Continuous-scroll PDF reader rendered in-process by
   [hayro](https://github.com/LaurenzV/hayro); page navigation, jump-to-page,
   25–200% zoom, fit width, fit page, selectable text/images, Download,
@@ -282,6 +284,7 @@ Cookies and CSRF tokens are never displayed in the UI.
 | --- | --- |
 | `auth`, `refresh_auth` | Account sign-in / saved login |
 | `course_list`, `course_info` | Dashboard / All Courses / course Home & Syllabus |
+| `announcement_list`, `announcement_info` | course Announcements / select an announcement |
 | `module_list`, `page_info` | Modules / select a named page |
 | `assignment_list`, `assignment_info` | course Assignments / select an assignment |
 | `grade_summary`, `course_grades`, `assignment_grade` | global Grades / course Grades / assignment grade panel |
@@ -293,8 +296,8 @@ Cookies and CSRF tokens are never displayed in the UI.
 | `attachment_text`, `attachment_image` | document reading / image buttons |
 | original resource read, inline limit and automatic download | Preview original |
 
-The operation catalog still covers all 24 reference tool names, including aliases,
-without requiring users to learn those names.
+The operation catalog covers all 24 reference tool names, including aliases, plus
+native announcement listing and detail, without requiring users to learn those names.
 
 ## Linux desktop icon
 
@@ -346,12 +349,12 @@ it does not launch the native UI or change course/account data.
 
 ## Verification boundaries
 
-Verified for this revision: a real release build, all 110 non-ignored tests in
+Verified for this revision: a real release build, all 122 non-ignored tests in
 the release profile, formatting, Clippy with warnings denied, and
-the complete 24-operation catalog. Shared-desktop automation has been removed; this project must
+the complete 26-operation catalog. Shared-desktop automation has been removed; this project must
 not send pointer or keyboard input to `:0` (see `AGENTS.md`).
 
-The isolated 111-test run (which includes the X11 icon test) passed. The PDF
+The isolated 123-test run (which includes the X11 icon test) passed. The PDF
 integration test now runs without Poppler and verifies real two-page hayro
 raster output, page dimensions/center colors, source and raster reuse, and cache
 deletion. Local HTTP tests verify parallel partial-module loading, targeted grade

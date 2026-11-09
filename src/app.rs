@@ -624,6 +624,9 @@ impl CanvasApp {
                     .is_some(),
                 CourseTab::Grades => self.get("course_grades", json!({"course_id":id})).is_some(),
                 CourseTab::Files => self.get("module_list", json!({"course_id":id})).is_some(),
+                CourseTab::Announcements => self
+                    .get("announcement_list", json!({"course_id":id}))
+                    .is_some(),
                 CourseTab::Home => {
                     self.get("course_info", json!({"course_id":id}))
                         .is_some_and(|v| model::course_home_view(&v["course"]) == "assignments")

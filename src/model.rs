@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CourseTab {
     Home,
+    Announcements,
     Modules,
     Assignments,
     Grades,
@@ -53,6 +54,7 @@ impl CourseTab {
     pub fn title(self) -> &'static str {
         match self {
             Self::Home => "Home",
+            Self::Announcements => "Announcements",
             Self::Modules => "Modules",
             Self::Assignments => "Assignments",
             Self::Grades => "Grades",
@@ -73,6 +75,10 @@ pub enum Route {
         tab: CourseTab,
     },
     Assignment {
+        course: String,
+        id: String,
+    },
+    Announcement {
         course: String,
         id: String,
     },
@@ -97,6 +103,7 @@ impl Route {
         match self {
             Self::Course { id, .. } => Some(id),
             Self::Assignment { course, .. }
+            | Self::Announcement { course, .. }
             | Self::Page { course, .. }
             | Self::File { course, .. } => Some(course),
             Self::Document { course, .. } => course.as_deref(),
@@ -144,6 +151,7 @@ pub fn requests(route: &Route) -> Vec<Request> {
         Route::Course { id, tab } => vec![Request::new(
             match tab {
                 CourseTab::Home | CourseTab::Syllabus => "course_info",
+                CourseTab::Announcements => "announcement_list",
                 CourseTab::Modules | CourseTab::Files => "module_list",
                 CourseTab::Assignments => "assignment_list",
                 CourseTab::Grades => "course_grades",
@@ -155,6 +163,10 @@ pub fn requests(route: &Route) -> Vec<Request> {
         Route::Assignment { course, id } => vec![Request::new(
             "assignment_info",
             json!({"course_id":course,"assignment_id":id}),
+        )],
+        Route::Announcement { course, id } => vec![Request::new(
+            "announcement_info",
+            json!({"course_id":course,"announcement_id":id}),
         )],
         Route::Page { course, slug } => vec![Request::new(
             "page_info",
@@ -364,6 +376,9 @@ pub fn planner_route(item: &Value) -> Option<Route> {
         "assignment" if !course.is_empty() && !id.is_empty() => {
             Some(Route::Assignment { course, id })
         }
+        "announcement" if !course.is_empty() && !id.is_empty() => {
+            Some(Route::Announcement { course, id })
+        }
         "planner_note" if !id.is_empty() => Some(Route::Note(id)),
         _ => None,
     }
@@ -457,6 +472,35 @@ mod tests {
         );
     }
     #[test]
+    fn announcements_use_their_course_and_selected_announcement() {
+        let list = requests(&Route::Course {
+            id: "7".into(),
+            tab: CourseTab::Announcements,
+        });
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "announcement_list");
+        assert_eq!(list[0].args, json!({"course_id":"7"}));
+
+        let detail = requests(&Route::Announcement {
+            course: "7".into(),
+            id: "9".into(),
+        });
+        assert_eq!(detail.len(), 1);
+        assert_eq!(detail[0].name, "announcement_info");
+        assert_eq!(
+            detail[0].args,
+            json!({"course_id":"7","announcement_id":"9"})
+        );
+        assert_eq!(
+            Route::Announcement {
+                course: "7".into(),
+                id: "9".into()
+            }
+            .course_id(),
+            Some("7")
+        );
+    }
+    #[test]
     fn module_and_planner_items_open_the_actual_selected_item() {
         assert_eq!(
             module_route("71", &json!({"item_type":"Assignment","content_id":"92"})),
@@ -468,6 +512,13 @@ mod tests {
         assert_eq!(
             planner_route(&json!({"item_type":"planner_note","item_id":"83"})),
             Some(Route::Note("83".into()))
+        );
+        assert_eq!(
+            planner_route(&json!({"item_type":"announcement","item_id":"84","course_id":"71"})),
+            Some(Route::Announcement {
+                course: "71".into(),
+                id: "84".into()
+            })
         );
     }
     #[test]

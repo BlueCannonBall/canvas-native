@@ -229,6 +229,37 @@ mod tests {
             scroll_and_draw(cx, &app);
             assert!(list_scrolled(cx, &app), "files should scroll");
 
+            // Announcements.
+            cx.update(|window, cx| {
+                app.update(cx, |app, _cx| {
+                    app.route = Route::Course {
+                        id: "102".into(),
+                        tab: CourseTab::Announcements,
+                    };
+                    let items: Vec<_> = (0..400)
+                        .map(|index| {
+                            json!({
+                                "id": index.to_string(),
+                                "title": format!("Announcement {index} with a long title"),
+                                "posted_at": "2026-11-06T18:00:00Z",
+                                "author": {"display_name": "Dr. Chen"},
+                            })
+                        })
+                        .collect();
+                    let key = model::cache_key("announcement_list", &json!({"course_id": "102"}));
+                    app.data.insert(key, json!({"announcements": items}));
+                });
+                window.draw(cx).clear();
+            });
+            assert_eq!(
+                cx.update(|_, cx| app.read(cx).content_scroll.item_count()),
+                400,
+                "one row per announcement"
+            );
+            assert!(list_height(cx, &app) > 100.0);
+            scroll_and_draw(cx, &app);
+            assert!(list_scrolled(cx, &app), "announcements should scroll");
+
             // Calendar agenda.
             cx.update(|window, cx| {
                 app.update(cx, |app, _cx| {
@@ -306,6 +337,45 @@ mod tests {
                 Arc::ptr_eq(&first, &second),
                 "the same HTML body must not be parsed again on each scroll frame"
             );
+        });
+    }
+
+    #[gpui::test]
+    fn announcement_detail_renders_its_canvas_body(cx: &mut TestAppContext) {
+        with_app(cx, |app, cx| {
+            cx.update(|window, cx| {
+                app.update(cx, |app, _cx| {
+                    app.route = Route::Announcement {
+                        course: "102".into(),
+                        id: "602".into(),
+                    };
+                    let key = model::cache_key(
+                        "announcement_info",
+                        &json!({"course_id": "102", "announcement_id": "602"}),
+                    );
+                    app.data.insert(
+                        key,
+                        json!({"announcement": {
+                            "id": "602",
+                            "title": "Problem set 6 and Thursday lab",
+                            "body_html": "<h2>Thursday lab</h2><p>Bring the printed worksheet.</p>",
+                            "posted_at": "2026-11-06T18:00:00Z",
+                            "author": {"display_name": "Dr. Chen"},
+                            "html_url": "https://canvas.example.edu/courses/102/discussion_topics/602",
+                        }}),
+                    );
+                });
+                window.draw(cx).clear();
+            });
+            let id = cx.update(|_, cx| {
+                app.read(cx)
+                    .prepared_body
+                    .borrow()
+                    .as_ref()
+                    .map(|(id, _, _)| id.clone())
+                    .expect("announcement body")
+            });
+            assert_eq!(id, "announcement-body-102-602");
         });
     }
 

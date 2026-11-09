@@ -148,6 +148,8 @@ pub fn is_cacheable_read(name: &str) -> bool {
         name,
         "course_list"
             | "course_info"
+            | "announcement_list"
+            | "announcement_info"
             | "module_list"
             | "assignment_list"
             | "assignment_info"
@@ -238,6 +240,8 @@ mod tests {
             "module_list",
             "course_info",
             "assignment_list",
+            "announcement_list",
+            "announcement_info",
             "file_info",
             "document_preview",
         ] {
@@ -286,7 +290,7 @@ mod tests {
     async fn discovers_all_operations_without_configuration_or_executable() {
         let worker = Backend::start(Settings::default(), &tokio::runtime::Handle::current());
         let tools = worker.request(Operation::Discover).await.unwrap().unwrap();
-        assert_eq!(tools.as_array().unwrap().len(), 24);
+        assert_eq!(tools.as_array().unwrap().len(), 26);
     }
     #[tokio::test]
     async fn cancellation_prevents_queued_operations() {

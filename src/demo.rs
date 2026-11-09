@@ -18,6 +18,14 @@ pub fn initial_route() -> model::Route {
             course: "102".into(),
             id: "202".into(),
         },
+        Ok("announcements") => Route::Course {
+            id: "102".into(),
+            tab: CourseTab::Announcements,
+        },
+        Ok("announcement") => Route::Announcement {
+            course: "102".into(),
+            id: "602".into(),
+        },
         Ok("modules") => Route::Course {
             id: "101".into(),
             tab: CourseTab::Modules,
@@ -72,6 +80,17 @@ fn assignments(course: &str) -> Vec<Value> {
     vec![
         json!({"id":id,"course_id":course,"name":title,"due_at":due(2),"points_possible":100,"grading_type":"points","submission_types":["online_upload"],"submission":{"workflow_state":"unsubmitted","missing":false}}),
         json!({"id":format!("{id}0"),"course_id":course,"name":second,"due_at":due(-3),"points_possible":20,"submission_types":["online_quiz"],"submission":{"workflow_state":"graded","score":19,"grade":"19","missing":false}}),
+    ]
+}
+fn announcements(course: &str) -> Vec<Value> {
+    let (author, topic, newest, older) = match course {
+        "102" => ("Dr. Chen", "Problem set 6 and Thursday lab", "602", "601"),
+        "103" => ("Dr. Rivera", "Primary source workshop", "604", "603"),
+        _ => ("Dr. Morgan", "Field trip reminder", "606", "605"),
+    };
+    vec![
+        json!({"id":newest,"title":topic,"message":format!("<h2>{topic}</h2><p>{author} posted this update for the class.</p><p>Review the attached guidance before the next meeting.</p>"),"posted_at":due(0),"author":{"display_name":author},"html_url":format!("https://canvas.example.edu/courses/{course}/discussion_topics/{newest}"),"read_state":"unread"}),
+        json!({"id":older,"title":"Welcome to the course","message":"<p>Course materials are available in Modules. Contact your instructor if you have questions.</p>","posted_at":due(-7),"author":{"display_name":author},"html_url":format!("https://canvas.example.edu/courses/{course}/discussion_topics/{older}"),"read_state":"read"}),
     ]
 }
 pub fn respond(operation: &Operation) -> Result<Value> {
@@ -138,6 +157,15 @@ pub fn respond(operation: &Operation) -> Result<Value> {
         }
         "course_front_page" => {
             json!({"page":{"title":"Welcome to your course","body_html":"<h2>Start here</h2><p>Your instructor’s home page appears here, rather than the syllabus.</p><ul><li>Read the weekly overview</li><li>Find assignments in Modules</li></ul>","front_page":true}})
+        }
+        "announcement_list" => json!({"announcements":announcements(course)}),
+        "announcement_info" => {
+            let aid = args["announcement_id"].as_str().unwrap_or("");
+            let item = announcements(course)
+                .into_iter()
+                .find(|v| v["id"] == aid)
+                .unwrap_or_else(|| announcements(course).remove(0));
+            json!({"announcement":item})
         }
         "assignment_list" => json!({"assignments":assignments(course)}),
         "assignment_info" => {
@@ -259,6 +287,26 @@ mod tests {
             })
             .unwrap();
             assert_eq!(data["structuredContent"]["assignments"][0]["course_id"], id);
+        }
+    }
+    #[test]
+    fn announcements_are_scoped_to_the_selected_course() {
+        for id in ["101", "102", "103"] {
+            let data = respond(&Operation::Tool {
+                name: "announcement_list".into(),
+                args: json!({"course_id":id}),
+            })
+            .unwrap();
+            let announcements = data["structuredContent"]["announcements"]
+                .as_array()
+                .unwrap();
+            assert_eq!(announcements.len(), 2);
+            assert!(
+                announcements[0]["html_url"]
+                    .as_str()
+                    .unwrap()
+                    .contains(&format!("/courses/{id}/"))
+            );
         }
     }
     #[test]
