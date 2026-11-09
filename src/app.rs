@@ -1,3 +1,4 @@
+use crate::content_rows::{ContentRow, PlannerRow};
 use crate::module_list::{ModuleIndex, ModuleRow};
 use crate::{
     backend::{Backend, Operation, Settings},
@@ -7,8 +8,8 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{Datelike, Local, NaiveDate};
 use gpui::{
-    Bounds, Entity, Image, ImageFormat, Subscription, TitlebarOptions, Window, WindowBounds,
-    WindowOptions, prelude::*, px, size,
+    Bounds, Entity, Image, ImageFormat, ScrollHandle, Subscription, TitlebarOptions, Window,
+    WindowBounds, WindowOptions, prelude::*, px, size,
 };
 use gpui::{ListAlignment, ListState};
 use gpui_component::Root;
@@ -16,6 +17,7 @@ use gpui_component::input::InputState;
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    hash::{Hash, Hasher},
     path::PathBuf,
     sync::Arc,
 };
@@ -90,6 +92,17 @@ pub struct CanvasApp {
     module_rows_course: String,
     module_rows_query: String,
     module_scroll: ListState,
+    /// Rows for the current row-list screen, prepared each frame from cached
+    /// data. Only rows near the viewport become elements.
+    content_rows: Arc<Vec<ContentRow>>,
+    content_scroll: ListState,
+    /// Tracks the ordinary page scroll so the pinned search area can forward
+    /// wheel input to the page below it.
+    page_scroll: ScrollHandle,
+    /// The last prepared Canvas HTML body, keyed by its text view id and a
+    /// content hash. Parsing the same page every scroll frame is wasted work.
+    prepared_body:
+        std::cell::RefCell<Option<(String, u64, Arc<crate::html_content::PreparedCanvasBody>)>>,
     last_saved: Option<PathBuf>,
     image: Option<Arc<Image>>,
     image_content: Option<Value>,
@@ -265,6 +278,10 @@ impl CanvasApp {
             module_rows_course: String::new(),
             module_rows_query: String::new(),
             module_scroll: ListState::new(0, ListAlignment::Top, px(400.)),
+            content_rows: Arc::new(Vec::new()),
+            content_scroll: ListState::new(0, ListAlignment::Top, px(400.)),
+            page_scroll: ScrollHandle::new(),
+            prepared_body: std::cell::RefCell::new(None),
             last_saved: None,
             image: None,
             image_content: None,
@@ -341,6 +358,7 @@ impl CanvasApp {
         self.search
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.page = 0;
+        self.reset_page_scroll();
         self.error = None;
         self.picker = None;
         self.image = None;
@@ -357,6 +375,7 @@ impl CanvasApp {
         if let Some(route) = self.history.pop() {
             self.route = route;
             self.search.update(cx, |s, cx| s.set_value("", window, cx));
+            self.reset_page_scroll();
             self.load_route(cx);
             self.rebuild_module_rows(cx);
             cx.notify();
@@ -594,6 +613,135 @@ impl CanvasApp {
     }
     fn showing_document_pages(&self) -> bool {
         matches!(self.route, Route::Document { .. }) && self.document_view == DocumentView::Pages
+    }
+    /// Screens whose repeated rows are rendered by one virtualized list. The
+    /// month calendar grid and small screens keep the regular page scroll.
+    fn showing_content_rows(&self) -> bool {
+        match &self.route {
+            Route::Course { id, tab } => match tab {
+                CourseTab::Assignments => self
+                    .get("assignment_list", json!({"course_id":id}))
+                    .is_some(),
+                CourseTab::Grades => self.get("course_grades", json!({"course_id":id})).is_some(),
+                CourseTab::Files => self.get("module_list", json!({"course_id":id})).is_some(),
+                CourseTab::Home => {
+                    self.get("course_info", json!({"course_id":id}))
+                        .is_some_and(|v| model::course_home_view(&v["course"]) == "assignments")
+                        && self
+                            .get("assignment_list", json!({"course_id":id}))
+                            .is_some()
+                }
+                _ => false,
+            },
+            Route::Calendar => {
+                if !(self.calendar_list || self.calendar_day.is_some()) {
+                    return false;
+                }
+                let request = self.planner_request(false);
+                self.get(&request.name, request.args).is_some()
+            }
+            _ => false,
+        }
+    }
+    /// Parse a Canvas HTML body once per page revision. The cached value is
+    /// reused by every frame while the user scrolls that page.
+    fn prepared_canvas_body(
+        &self,
+        id: &str,
+        html: &str,
+        course: &str,
+    ) -> Arc<crate::html_content::PreparedCanvasBody> {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        id.hash(&mut hasher);
+        html.hash(&mut hasher);
+        course.hash(&mut hasher);
+        let hash = hasher.finish();
+        let mut cache = self.prepared_body.borrow_mut();
+        if let Some((cached_id, cached_hash, prepared)) = cache.as_ref()
+            && cached_id == id
+            && *cached_hash == hash
+        {
+            return prepared.clone();
+        }
+        let prepared = Arc::new(crate::html_content::prepare_canvas_body(html, course));
+        *cache = Some((id.to_owned(), hash, prepared.clone()));
+        prepared
+    }
+    /// A navigation starts the next page at the top; the old page's offset
+    /// must not be applied to a different screen.
+    fn reset_page_scroll(&self) {
+        self.page_scroll.set_offset(gpui::point(px(0.), px(0.)));
+    }
+    /// Wheel input over the pinned heading/search belongs to the content below
+    /// it. Route it to whichever scroll region is currently active so the
+    /// search bar does not become a dead area.
+    fn scroll_from_pinned_heading(
+        &mut self,
+        event: &gpui::ScrollWheelEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let delta = event.delta.pixel_delta(px(20.)).y;
+        if self.showing_content_rows() {
+            self.content_scroll.scroll_by(-delta);
+        } else if self.showing_modules() {
+            self.module_scroll.scroll_by(-delta);
+        } else if self.showing_document_pages() {
+            self.document_scroll.scroll_by(-delta);
+        } else {
+            let max = self.page_scroll.max_offset().height;
+            let offset = self.page_scroll.offset();
+            // The page offset is negative when scrolled down, so a negative
+            // wheel delta (down) is added, not subtracted.
+            self.page_scroll.set_offset(gpui::point(
+                offset.x,
+                (offset.y + delta).clamp(-max, px(0.)),
+            ));
+        }
+        cx.notify();
+    }
+    /// A filter, search or navigation change starts the list from its first
+    /// row, even when some rows at the top are unchanged.
+    fn reset_content_scroll(&self) {
+        self.content_scroll.scroll_to(gpui::ListOffset {
+            item_ix: 0,
+            offset_in_item: px(0.),
+        });
+    }
+    /// Keep the shared list's measured rows in step with the prepared rows.
+    /// Unchanged rows are not spliced, so scrolling does not disturb cached
+    /// heights, and a filtered or refreshed row keeps the scroll position
+    /// unless the changed rows are the ones on screen.
+    fn sync_content_rows(&mut self, rows: Vec<ContentRow>) {
+        if *self.content_rows == rows {
+            return;
+        }
+        let old_top = self.content_scroll.logical_scroll_top().item_ix;
+        let prefix = self
+            .content_rows
+            .iter()
+            .zip(&rows)
+            .take_while(|(old, new)| old == new)
+            .count();
+        let shared = self.content_rows.len().min(rows.len());
+        let suffix = self
+            .content_rows
+            .iter()
+            .rev()
+            .zip(rows.iter().rev())
+            .take(shared - prefix)
+            .take_while(|(old, new)| old == new)
+            .count();
+        let old_end = self.content_rows.len() - suffix;
+        self.content_scroll
+            .splice(prefix..old_end, rows.len() - prefix - suffix);
+        // Filtering and searching replace the rows around the viewport. Start
+        // those lists over at the first result instead of keeping a row index
+        // that now points into a different set. A change above or below the
+        // viewport is handled by splice, which preserves the visible row.
+        if prefix <= old_top && old_top < old_end {
+            self.reset_content_scroll();
+        }
+        self.content_rows = Arc::new(rows);
     }
     /// Opens a reader in its own window. Canvas links, module files and
     /// attachment rows all use this so the list the user came from stays put.
@@ -1777,3 +1925,6 @@ mod reader_layout_tests {
         });
     }
 }
+
+#[cfg(test)]
+mod content_list_tests;

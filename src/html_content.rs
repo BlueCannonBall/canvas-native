@@ -14,6 +14,38 @@ pub struct CanvasFileLink {
     pub title: String,
 }
 
+/// A Canvas HTML body with its file actions and plain text extracted once.
+/// Preparing this on every frame parses the same document repeatedly; screens
+/// cache it by page identity instead.
+#[derive(Clone, Debug)]
+pub struct PreparedCanvasBody {
+    pub body: gpui::SharedString,
+    pub links: Vec<CanvasFileLink>,
+    pub text: String,
+}
+
+impl PreparedCanvasBody {
+    /// A body that only repeats the name of its single file link would show
+    /// the file twice, so the caller skips the text.
+    pub fn only_link_body(&self) -> bool {
+        self.links.len() == 1
+            && self
+                .text
+                .trim()
+                .eq_ignore_ascii_case(self.links[0].title.trim())
+    }
+}
+
+pub fn prepare_canvas_body(html: &str, course: &str) -> PreparedCanvasBody {
+    let (body, links) = prepare_canvas_page(html, course);
+    let text = notice_text(&body);
+    PreparedCanvasBody {
+        body: body.into(),
+        links,
+        text,
+    }
+}
+
 /// Canvas page bodies render through a text view that opens every link in the
 /// system browser. File links should instead open the app's document reader,
 /// so collect them, and remove their anchors from the body. The link text stays

@@ -6,6 +6,7 @@
 mod app;
 mod appearance;
 mod backend;
+mod content_rows;
 mod demo;
 mod document_preview;
 mod engine;

@@ -21,7 +21,8 @@ File actions are disabled there because the sample account has no Canvas session
 
 - Familiar Canvas navigation: Dashboard, Courses, Calendar, Grades, Account, and
   per-course Home, Modules, Assignments, Grades, Files, and Syllabus.
-- Virtualized module lists and on-demand loading for large courses.
+- Virtualized lists for modules, assignments, grades, files, and the calendar
+  agenda, with the page heading and search pinned above the scrolling rows.
 - Continuous-scroll PDF reader rendered in-process by
   [hayro](https://github.com/LaurenzV/hayro); page navigation, jump-to-page,
   25–200% zoom, fit width, fit page, selectable text/images, Download,
@@ -119,6 +120,21 @@ Account/session changes invalidate pending cache updates.
 This reduces/hides first-visit waits, but network requests, login restoration and
 initial text/image layout still take time. Course data remains an in-memory cache.
 Live Canvas latency improvements have not been benchmarked here.
+
+Scrolling follows the same rule: a screen builds elements for the rows near the
+viewport, not for every row in the course. Assignment, grade, file, agenda and
+module rows are prepared as data and rendered by one `gpui::list`; the list
+reuses measured row heights and only splices rows that changed. The page title
+and search box stay pinned above the scrolling body on every screen that has
+them. Filters, summary cards, table headers and list controls scroll below that
+heading. Wheel input over the pinned heading is forwarded to whichever list or
+page scroll region is active, so the search bar never becomes a dead area. Row
+borders and module boxes are drawn per row so short lists still end where they
+did before. Canvas HTML is parsed once per page revision and reused; HTML pages
+and the `Text & images` reader keep their page-body scroll with the same pinned
+title/search. `src/app/content_list_tests.rs` opens real GPUI test windows,
+scrolls these screens, and checks that both the list and the ordinary page
+scroll follow wheel input over the pinned heading.
 
 GPUI 0.2.2 supports pixel-precise scroll deltas. Its virtual list coalesces and
 applies input directly; browser-like animated wheel easing is not automatic and

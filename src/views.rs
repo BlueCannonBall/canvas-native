@@ -187,18 +187,15 @@ impl CanvasApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (body, links) = crate::html_content::prepare_canvas_page(html, course);
-        let body_text = crate::html_content::notice_text(&body);
-        let only_link_body =
-            links.len() == 1 && body_text.trim().eq_ignore_ascii_case(links[0].title.trim());
+        let id = id.into();
+        let prepared = self.prepared_canvas_body(&id, html, course);
         let mut view = div().w_full().min_w_0().flex().flex_col().gap_4();
-        if !links.is_empty() {
-            view = view.child(self.canvas_file_links(&links, cx));
+        if !prepared.links.is_empty() {
+            view = view.child(self.canvas_file_links(&prepared.links, cx));
         }
-        if !only_link_body {
-            view = view.child(
-                TextView::html(id.into(), SharedString::from(body), window, cx).selectable(true),
-            );
+        if !prepared.only_link_body() {
+            view =
+                view.child(TextView::html(id, prepared.body.clone(), window, cx).selectable(true));
         }
         view.into_any_element()
     }
@@ -919,7 +916,18 @@ impl CanvasApp {
             content = content.child(muted("You’re all caught up.", cx));
         }
         for (index, item) in items.iter().take(7).enumerate() {
-            content = content.child(self.planner_item(item, &format!("todo-{index}"), true, cx));
+            let course = field(item, "course_id");
+            let course_name = if course.is_empty() {
+                "Personal to-do".into()
+            } else {
+                self.course_name(&course)
+            };
+            content = content.child(self.planner_item(
+                &PlannerRow::new(item, course_name),
+                &format!("todo-{index}"),
+                true,
+                cx,
+            ));
         }
         content
             .child(self.route_button("see-calendar", "View Calendar", Route::Calendar, cx))
@@ -927,14 +935,13 @@ impl CanvasApp {
     }
     fn planner_item(
         &self,
-        item: &Value,
+        item: &PlannerRow,
         id: &str,
         compact: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let colors = palette(cx);
-        let title = field(item, "title");
-        let course = field(item, "course_id");
+        let course = item.course_id.clone();
         let color = model::course_color(&course);
         let mut row = div()
             .flex()
@@ -944,45 +951,39 @@ impl CanvasApp {
             .border_color(rgb(colors.border));
         row = row.child(div().w(px(3.)).flex_shrink_0().bg(rgb(color)));
         let mut body = div().flex_1().min_w_0().flex().flex_col().gap_2();
-        if let Some(route) = model::planner_route(item) {
-            body = body.child(self.route_link(format!("{id}-open"), &title, route, cx));
+        if let Some(route) = item.route.clone() {
+            body = body.child(self.route_link(format!("{id}-open"), &item.title, route, cx));
         } else {
-            body = body.child(div().font_weight(FontWeight::MEDIUM).child(title));
-            if let Some(url) = item["html_url"].as_str() {
+            body = body.child(
+                div()
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(item.title.clone()),
+            );
+            if let Some(url) = item.url.as_deref() {
                 body = body.child(self.web_link(format!("{id}-web"), "Open in Canvas", url, cx));
             }
         }
-        let course_name = if course.is_empty() {
-            "Personal to-do".into()
-        } else {
-            self.course_name(&course)
-        };
-        body = body.child(muted(course_name, cx)).child(muted(
-            model::date_label(
-                item["due_at"]
-                    .as_str()
-                    .or(item["scheduled_at"].as_str())
-                    .unwrap_or(""),
-            ),
-            cx,
-        ));
+        body = body
+            .child(muted(item.course_name.clone(), cx))
+            .child(muted(item.date.clone(), cx));
         if !compact {
-            body = body.child(badge(model::status(item), cx));
-            let kind = field(item, "item_type");
+            body = body.child(badge(item.status, cx));
             if matches!(
-                kind.as_str(),
+                item.kind.as_str(),
                 "assignment" | "announcement" | "discussion_topic" | "wiki_page" | "quiz"
             ) && !course.is_empty()
             {
                 let linked =
-                    json!({"id":item["item_id"],"kind":kind,"title":item["title"],"course":course});
+                    json!({"id":item.item_id,"kind":item.kind,"title":item.title,"course":course});
                 body = body.child(
-                    Button::new(SharedString::from(format!("{id}-reminder")))
-                        .label("Add reminder")
-                        .small()
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.open_note(None, Some(linked.clone()), window, cx)
-                        })),
+                    div().flex().child(
+                        Button::new(SharedString::from(format!("{id}-reminder")))
+                            .label("Add reminder")
+                            .small()
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.open_note(None, Some(linked.clone()), window, cx)
+                            })),
+                    ),
                 );
             }
         }
@@ -1070,7 +1071,7 @@ impl CanvasApp {
         view.into_any_element()
     }
     fn course_home(
-        &self,
+        &mut self,
         id: &str,
         syllabus_only: bool,
         window: &mut Window,
@@ -1089,10 +1090,24 @@ impl CanvasApp {
                         return self.loading("course_front_page", json!({"course_id":id}), cx);
                     };
                     let page = &front["page"];
-                    return div().w_full().min_w_0().flex().flex_col().gap_5()
-                        .child(heading(field(page,"title")))
-                        .child(self.canvas_body(format!("front-page-{id}"), &field(page,"body_html"), id, window, cx))
-                        .into_any_element();
+                    let body = field(page, "body_html");
+                    let mut view = div()
+                        .w_full()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap_5()
+                        .child(heading(field(page, "title")));
+                    if !body.trim().is_empty() {
+                        view = view.child(self.canvas_body(
+                            format!("front-page-{id}"),
+                            &body,
+                            id,
+                            window,
+                            cx,
+                        ));
+                    }
+                    return view.into_any_element();
                 },
                 "feed" => return box_view(cx).child(heading("Course activity"))
                     .child(muted("This course uses Canvas’s activity stream. Open it in Canvas to see discussions and recent activity.",cx))
@@ -1165,6 +1180,443 @@ impl CanvasApp {
             view = view.child(self.canvas_body(format!("syllabus-{id}"), &html, id, window, cx));
         }
         view.into_any_element()
+    }
+    /// Render the prepared rows of the current screen. The list builds elements
+    /// for the visible rows and its overdraw only, so a course with hundreds of
+    /// assignments costs the same to scroll as one with a dozen.
+    fn virtual_rows(&mut self, rows: Vec<ContentRow>, cx: &mut Context<Self>) -> AnyElement {
+        self.sync_content_rows(rows);
+        let view = cx.entity().downgrade();
+        div()
+            .relative()
+            .flex_1()
+            .min_h_0()
+            .overflow_hidden()
+            .child(
+                gpui::list(self.content_scroll.clone(), move |index, _, cx| {
+                    view.update(cx, |this, cx| this.content_row(index, cx))
+                        .unwrap_or_else(|_| div().into_any_element())
+                })
+                .size_full(),
+            )
+            .child(gpui_component::scroll::Scrollbar::vertical(
+                &self.content_scroll,
+            ))
+            .into_any_element()
+    }
+    fn assignment_filters_element(&self, cx: &mut Context<Self>) -> Div {
+        let mut filters = div().flex().gap_2().pb_5();
+        for label in ["All", "Upcoming", "Missing", "Submitted"] {
+            filters = filters.child(
+                Button::new(SharedString::from(format!("assignment-filter-{label}")))
+                    .label(label)
+                    .small()
+                    .when(self.assignment_filter == label, |b| b.primary())
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.assignment_filter = label.into();
+                        cx.notify();
+                    })),
+            );
+        }
+        filters
+    }
+    fn grades_summary_element(
+        &self,
+        current: &str,
+        current_grade: &str,
+        final_score: &str,
+        final_grade: &str,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        // The gap must be outside the card; padding on the bordered card would
+        // only make the card taller and let it touch the table below.
+        div().pb_6().child(
+            box_view(cx).child(
+                div()
+                    .flex()
+                    .gap_8()
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(muted("Current grade", cx))
+                            .child(div().text_3xl().child(format!("{current} {current_grade}"))),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(muted("Final grade (including ungraded work)", cx))
+                            .child(
+                                div()
+                                    .text_2xl()
+                                    .child(format!("{final_score} {final_grade}")),
+                            ),
+                    ),
+            ),
+        )
+    }
+    fn grades_header_element(&self, cx: &mut Context<Self>) -> Div {
+        let colors = palette(cx);
+        div()
+            .flex()
+            .gap_4()
+            .p_4()
+            .bg(rgb(colors.subtle))
+            .font_weight(FontWeight::SEMIBOLD)
+            .border_t_1()
+            .border_l_1()
+            .border_r_1()
+            .border_color(rgb(colors.border))
+            .rounded_t_sm()
+            .child(div().flex_1().child("Assignment"))
+            .child(div().w(px(130.)).child("Score"))
+            .child(div().w(px(110.)).child("Status"))
+    }
+    fn files_intro_element(&self, cx: &mut Context<Self>) -> Div {
+        muted(
+            "Files shared in course modules. Files attached to assignments are available on each assignment page.",
+            cx,
+        )
+        .pb_5()
+    }
+    fn calendar_controls_element(&self, cx: &mut Context<Self>) -> Div {
+        let mut controls = div().flex().flex_wrap().gap_3().items_center();
+        for (delta, icon) in [(-1, IconName::ChevronLeft), (1, IconName::ChevronRight)] {
+            controls = controls.child(
+                Button::new(SharedString::from(format!("month-{delta}")))
+                    .icon(icon)
+                    .small()
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.month = model::shift_month(this.month, delta);
+                        this.applied_range = None;
+                        this.calendar_day = None;
+                        this.load_route(cx);
+                        cx.notify();
+                    })),
+            );
+        }
+        controls = controls
+            .child(
+                Button::new("calendar-today")
+                    .label("Today")
+                    .small()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.month = model::month_start(Local::now().date_naive());
+                        this.applied_range = None;
+                        this.calendar_day = None;
+                        this.load_route(cx);
+                        cx.notify();
+                    })),
+            )
+            .child(
+                div()
+                    .text_xl()
+                    .flex_1()
+                    .child(self.month.format("%B %Y").to_string()),
+            )
+            .child(
+                Button::new("calendar-format")
+                    .label(if self.calendar_list {
+                        "Month"
+                    } else {
+                        "Agenda"
+                    })
+                    .small()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.calendar_list = !this.calendar_list;
+                        this.applied_range = None;
+                        this.calendar_day = None;
+                        this.load_route(cx);
+                        cx.notify();
+                    })),
+            )
+            .child(
+                Button::new("calendar-new-todo")
+                    .icon(IconName::Plus)
+                    .label("To-do")
+                    .small()
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.open_note(None, None, window, cx)),
+                    ),
+            );
+        controls
+    }
+    fn calendar_filters_element(&self, cx: &mut Context<Self>) -> Div {
+        let course_label = self
+            .calendar_course
+            .as_deref()
+            .map(|id| self.course_name(id))
+            .unwrap_or_else(|| "All courses".into());
+        let mut filters = div().flex().flex_wrap().gap_2().items_center().child(
+            Button::new("calendar-course-picker")
+                .label(course_label)
+                .icon(IconName::ChevronDown)
+                .small()
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.picker = if this.picker == Some(Picker::CalendarCourse) {
+                        None
+                    } else {
+                        Some(Picker::CalendarCourse)
+                    };
+                    cx.notify();
+                })),
+        );
+        for (label, filter) in [
+            ("All", None),
+            ("To Do", Some("incomplete_items")),
+            ("Completed", Some("complete_items")),
+            ("New activity", Some("new_activity")),
+        ] {
+            filters = filters.child(
+                Button::new(SharedString::from(format!("calendar-filter-{label}")))
+                    .label(label)
+                    .small()
+                    .when(self.calendar_filter.as_deref() == filter, |b| b.primary())
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.calendar_filter = filter.map(str::to_owned);
+                        this.load_route(cx);
+                        cx.notify();
+                    })),
+            );
+        }
+        filters
+    }
+    fn calendar_range_element(&self, cx: &mut Context<Self>) -> Div {
+        div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_3()
+            .child(muted("From", cx))
+            .child(div().w(px(150.)).child(Input::new(&self.range_start)))
+            .child(muted("Through", cx))
+            .child(div().w(px(150.)).child(Input::new(&self.range_end)))
+            .child(
+                Button::new("apply-date-range")
+                    .label("Apply dates")
+                    .small()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let start = this.range_start.read(cx).value().to_string();
+                        let end = this.range_end.read(cx).value().to_string();
+                        if let (Ok(a), Ok(b)) = (
+                            NaiveDate::parse_from_str(&start, "%Y-%m-%d"),
+                            NaiveDate::parse_from_str(&end, "%Y-%m-%d"),
+                        ) && a <= b
+                        {
+                            this.applied_range = Some((start, end));
+                            this.calendar_day = None;
+                            this.load_route(cx);
+                        } else {
+                            this.error = Some(
+                                "Choose valid dates with the end on or after the start.".into(),
+                            );
+                        }
+                        cx.notify();
+                    })),
+            )
+    }
+    fn calendar_day_header_element(&self, label: &str, cx: &mut Context<Self>) -> Div {
+        div()
+            .flex()
+            .gap_4()
+            .items_center()
+            .child(heading(label.to_owned()))
+            .child(
+                Button::new("calendar-all-days")
+                    .label("Back to month")
+                    .small()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.calendar_day = None;
+                        cx.notify();
+                    })),
+            )
+    }
+    fn content_row(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
+        let colors = palette(cx);
+        let Some(row) = self.content_rows.get(index).cloned() else {
+            return div().into_any_element();
+        };
+        let previous = index
+            .checked_sub(1)
+            .and_then(|previous| self.content_rows.get(previous));
+        let next = self.content_rows.get(index + 1);
+        let row = match row {
+            ContentRow::AssignmentFilters => self.assignment_filters_element(cx).into_any_element(),
+            ContentRow::GradesSummary {
+                current,
+                current_grade,
+                final_score,
+                final_grade,
+            } => self
+                .grades_summary_element(&current, &current_grade, &final_score, &final_grade, cx)
+                .into_any_element(),
+            ContentRow::GradesHeader => self.grades_header_element(cx).into_any_element(),
+            ContentRow::FilesIntro => self.files_intro_element(cx).into_any_element(),
+            ContentRow::CalendarControls => {
+                self.calendar_controls_element(cx).pb_5().into_any_element()
+            }
+            ContentRow::CalendarFilters => {
+                self.calendar_filters_element(cx).pb_5().into_any_element()
+            }
+            ContentRow::CalendarRange => self.calendar_range_element(cx).pb_5().into_any_element(),
+            ContentRow::CalendarPicker => div()
+                .pb_5()
+                .child(self.course_picker(Picker::CalendarCourse, cx))
+                .into_any_element(),
+            ContentRow::CalendarDayHeader { label } => self
+                .calendar_day_header_element(&label, cx)
+                .pb_5()
+                .into_any_element(),
+            ContentRow::Message { text } => div()
+                .w_full()
+                .py_4()
+                .child(muted(text, cx))
+                .into_any_element(),
+            ContentRow::Assignment {
+                course,
+                id,
+                name,
+                due,
+                points,
+                status,
+            } => {
+                let first = !matches!(previous, Some(ContentRow::Assignment { .. }));
+                let last = !matches!(next, Some(ContentRow::Assignment { .. }));
+                let mut row = div()
+                    .px_5()
+                    .py_4()
+                    .flex()
+                    .gap_4()
+                    .items_center()
+                    .border_l_1()
+                    .border_r_1()
+                    .border_b_1()
+                    .border_color(rgb(colors.border));
+                if first {
+                    row = row.border_t_1().rounded_t_sm();
+                }
+                if last {
+                    row = row.rounded_b_sm();
+                }
+                row.child(Icon::new(IconName::File).text_color(rgb(colors.success)))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(self.route_link(
+                                format!("assignment-{id}"),
+                                &name,
+                                Route::Assignment { course, id },
+                                cx,
+                            ))
+                            .child(muted(format!("{due}  ·  {points} points"), cx)),
+                    )
+                    .child(badge(status, cx))
+                    .into_any_element()
+            }
+            ContentRow::Grade {
+                course,
+                id,
+                name,
+                due,
+                score,
+                status,
+            } => {
+                let last = !matches!(next, Some(ContentRow::Grade { .. }));
+                let mut row = div()
+                    .flex()
+                    .gap_4()
+                    .p_4()
+                    .items_center()
+                    .border_l_1()
+                    .border_r_1()
+                    .border_t_1()
+                    .border_color(rgb(colors.border));
+                if last {
+                    row = row.border_b_1().rounded_b_sm();
+                }
+                row.child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(self.route_link(
+                            format!("grade-assignment-{id}"),
+                            &name,
+                            Route::Assignment { course, id },
+                            cx,
+                        ))
+                        .child(muted(due, cx)),
+                )
+                .child(div().w(px(130.)).flex_shrink_0().child(score))
+                .child(div().w(px(110.)).flex_shrink_0().child(badge(status, cx)))
+                .into_any_element()
+            }
+            ContentRow::FileModule { name, first } => {
+                let mut row = div()
+                    .flex()
+                    .gap_3()
+                    .items_center()
+                    .px_5()
+                    .pt_5()
+                    .pb_2()
+                    .bg(rgb(colors.surface))
+                    .border_t_1()
+                    .border_l_1()
+                    .border_r_1()
+                    .border_color(rgb(colors.border))
+                    .rounded_t_md()
+                    .child(icon_slot(IconName::Folder, rgb(colors.muted)))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(name),
+                    );
+                if !first {
+                    row = row.mt_5();
+                }
+                row.into_any_element()
+            }
+            ContentRow::File { course, id, title } => {
+                let last = !matches!(next, Some(ContentRow::File { .. }));
+                let mut row = div()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .px_5()
+                    .py_3()
+                    .bg(rgb(colors.surface))
+                    .border_l_1()
+                    .border_r_1()
+                    .border_t_1()
+                    .border_color(rgb(colors.border));
+                if last {
+                    row = row.border_b_1().rounded_b_md().pb_5();
+                }
+                row.child(icon_slot(IconName::File, rgb(colors.muted)))
+                    .child(div().flex_1().min_w_0().child(self.file_document_link(
+                        format!("file-{id}"),
+                        &title,
+                        &course,
+                        id,
+                        cx,
+                    )))
+                    .into_any_element()
+            }
+            ContentRow::Planner(item) => {
+                self.planner_item(&item, &format!("agenda-{index}"), false, cx)
+            }
+        };
+        // List rows are measured as independent layout roots. A flex row with
+        // an automatic width would shrink to its text contents, so every row
+        // explicitly fills the list width.
+        div().w_full().min_w_0().child(row).into_any_element()
     }
     fn modules(&self, id: &str, cx: &mut Context<Self>) -> AnyElement {
         if self.get("module_list", json!({"course_id":id})).is_none() {
@@ -1299,98 +1751,30 @@ impl CanvasApp {
             }
         }
     }
-    fn assignments(&self, id: &str, cx: &mut Context<Self>) -> AnyElement {
-        let colors = palette(cx);
+    fn assignments(&mut self, id: &str, cx: &mut Context<Self>) -> AnyElement {
         let Some(data) = self.get("assignment_list", json!({"course_id":id})) else {
             return self.loading("assignment_list", json!({"course_id":id}), cx);
         };
-        let mut view = div().flex().flex_col().gap_5();
-        let mut filters = div().flex().gap_2();
-        for label in ["All", "Upcoming", "Missing", "Submitted"] {
-            filters = filters.child(
-                Button::new(SharedString::from(format!("assignment-filter-{label}")))
-                    .label(label)
-                    .small()
-                    .when(self.assignment_filter == label, |b| b.primary())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.assignment_filter = label.into();
-                        cx.notify();
-                    })),
-            );
-        }
-        view = view.child(filters);
         let query = self.search.read(cx).value().to_lowercase();
-        let today = Local::now().date_naive();
-        let mut items = model::list(Some(data), "assignments");
-        items.sort_by_key(|v| (field(v, "due_at").is_empty(), field(v, "due_at")));
-        let selected: Vec<_> = items
-            .into_iter()
-            .filter(|v| field(v, "name").to_lowercase().contains(&query))
-            .filter(|v| match self.assignment_filter.as_str() {
-                "Missing" => model::status(v) == "Missing",
-                "Submitted" => matches!(model::status(v), "Submitted" | "Graded"),
-                "Upcoming" => v["due_at"]
-                    .as_str()
-                    .and_then(model::date)
-                    .is_some_and(|d| d >= today),
-                _ => true,
-            })
-            .collect();
-        let mut list = div()
-            .border_1()
-            .border_color(rgb(colors.border))
-            .rounded_sm();
-        if selected.is_empty() {
-            list = list.child(
-                div()
-                    .p_5()
-                    .child(muted("No assignments match this view.", cx)),
-            );
+        let mut rows = vec![ContentRow::AssignmentFilters];
+        let assignments = crate::content_rows::assignment_rows(
+            id,
+            data,
+            &query,
+            &self.assignment_filter,
+            Local::now().date_naive(),
+        );
+        if assignments.is_empty() {
+            rows.push(ContentRow::Message {
+                text: "No assignments match this view.".into(),
+            });
+        } else {
+            rows.extend(assignments);
         }
-        for assignment in selected {
-            let aid = field(assignment, "id");
-            list = list.child(
-                div()
-                    .px_5()
-                    .py_4()
-                    .flex()
-                    .gap_4()
-                    .items_center()
-                    .border_b_1()
-                    .border_color(rgb(colors.border))
-                    .child(Icon::new(IconName::File).text_color(rgb(colors.success)))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .child(self.route_link(
-                                format!("assignment-{aid}"),
-                                &field(assignment, "name"),
-                                Route::Assignment {
-                                    course: id.into(),
-                                    id: aid,
-                                },
-                                cx,
-                            ))
-                            .child(muted(
-                                format!(
-                                    "{}  ·  {} points",
-                                    model::date_label(assignment["due_at"].as_str().unwrap_or("")),
-                                    field(assignment, "points_possible")
-                                ),
-                                cx,
-                            )),
-                    )
-                    .child(badge(model::status(assignment), cx)),
-            );
-        }
-        view.child(list).into_any_element()
+        self.virtual_rows(rows, cx)
     }
     fn assignment_detail(
-        &self,
+        &mut self,
         course: &str,
         id: &str,
         window: &mut Window,
@@ -1602,8 +1986,7 @@ impl CanvasApp {
         row.into_any_element()
     }
 
-    fn grades(&self, course: Option<&str>, cx: &mut Context<Self>) -> AnyElement {
-        let colors = palette(cx);
+    fn grades(&mut self, course: Option<&str>, cx: &mut Context<Self>) -> AnyElement {
         let Some(id) = course else {
             let Some(data) = self.get("grade_summary", json!({})) else {
                 return self.loading("grade_summary", json!({}), cx);
@@ -1675,161 +2058,42 @@ impl CanvasApp {
             return self.loading("course_grades", json!({"course_id":id}), cx);
         };
         let grades = &data["course_grades"];
-        let mut view = div().flex().flex_col().gap_6().child(
-            box_view(cx).child(
-                div()
-                    .flex()
-                    .gap_8()
-                    .child(div().flex_1().child(muted("Current grade", cx)).child(
-                        div().text_3xl().child(format!(
-                            "{} {}",
-                            model::score(&grades["total_grade"]["current_score"]),
-                            field(&grades["total_grade"], "current_grade")
-                        )),
-                    ))
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(muted("Final grade (including ungraded work)", cx))
-                            .child(div().text_2xl().child(format!(
-                                "{} {}",
-                                model::score(&grades["total_grade"]["final_score"]),
-                                field(&grades["total_grade"], "final_grade")
-                            ))),
-                    ),
-            ),
-        );
-        let mut table = div()
-            .border_1()
-            .border_color(rgb(colors.border))
-            .rounded_sm()
-            .child(
-                div()
-                    .flex()
-                    .gap_4()
-                    .p_4()
-                    .bg(rgb(colors.subtle))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(div().flex_1().child("Assignment"))
-                    .child(div().w(px(130.)).child("Score"))
-                    .child(div().w(px(110.)).child("Status")),
-            );
+        let total = &grades["total_grade"];
+        let mut rows = vec![
+            ContentRow::GradesSummary {
+                current: model::score(&total["current_score"]),
+                current_grade: field(total, "current_grade"),
+                final_score: model::score(&total["final_score"]),
+                final_grade: field(total, "final_grade"),
+            },
+            ContentRow::GradesHeader,
+        ];
         let query = self.search.read(cx).value().to_lowercase();
-        for grade in model::list(Some(grades), "assignments")
-            .into_iter()
-            .filter(|v| field(v, "name").to_lowercase().contains(&query))
-        {
-            let aid = field(grade, "assignment_id");
-            let score = if grade["score"].is_null() {
-                "—".into()
-            } else {
-                format!(
-                    "{} / {}",
-                    field(grade, "score"),
-                    field(grade, "points_possible")
-                )
-            };
-            table = table.child(
-                div()
-                    .flex()
-                    .gap_4()
-                    .p_4()
-                    .items_center()
-                    .border_t_1()
-                    .border_color(rgb(colors.border))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .child(self.route_link(
-                                format!("grade-assignment-{aid}"),
-                                &field(grade, "name"),
-                                Route::Assignment {
-                                    course: id.into(),
-                                    id: aid,
-                                },
-                                cx,
-                            ))
-                            .child(muted(
-                                model::date_label(grade["due_at"].as_str().unwrap_or("")),
-                                cx,
-                            )),
-                    )
-                    .child(div().w(px(130.)).flex_shrink_0().child(score))
-                    .child(
-                        div()
-                            .w(px(110.))
-                            .flex_shrink_0()
-                            .child(badge(model::status(grade), cx)),
-                    ),
-            );
+        let grades = crate::content_rows::grade_rows(id, grades, &query);
+        if grades.is_empty() {
+            rows.push(ContentRow::Message {
+                text: "No graded assignments match this view.".into(),
+            });
+        } else {
+            rows.extend(grades);
         }
-        view = view.child(table);
-        view.into_any_element()
+        self.virtual_rows(rows, cx)
     }
-    fn files(&self, course: &str, cx: &mut Context<Self>) -> AnyElement {
-        let colors = palette(cx);
+    fn files(&mut self, course: &str, cx: &mut Context<Self>) -> AnyElement {
         let Some(data) = self.get("module_list", json!({"course_id":course})) else {
             return self.loading("module_list", json!({"course_id":course}), cx);
         };
-        let mut view=div().flex().flex_col().gap_5().child(muted("Files shared in course modules. Files attached to assignments are available on each assignment page.", cx));
         let query = self.search.read(cx).value().to_lowercase();
-        let mut count = 0;
-        for module in model::list(Some(data), "modules") {
-            let items = model::list(Some(module), "items")
-                .into_iter()
-                .filter(|v| {
-                    field(v, "item_type") == "File"
-                        && field(v, "title").to_lowercase().contains(&query)
-                })
-                .collect::<Vec<_>>();
-            if items.is_empty() {
-                continue;
-            }
-            let mut folder = box_view(cx).child(
-                div()
-                    .flex()
-                    .gap_3()
-                    .items_center()
-                    .child(icon_slot(IconName::Folder, rgb(colors.muted)))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(field(module, "name")),
-                    ),
-            );
-            for file in items {
-                let id = field(file, "content_id");
-                folder = folder.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_3()
-                        .py_3()
-                        .border_t_1()
-                        .border_color(rgb(colors.border))
-                        .child(icon_slot(IconName::File, rgb(colors.muted)))
-                        .child(div().flex_1().min_w_0().child(self.file_document_link(
-                            format!("file-{id}"),
-                            &field(file, "title"),
-                            course,
-                            id,
-                            cx,
-                        ))),
-                );
-                count += 1;
-            }
-            view = view.child(folder);
+        let mut rows = vec![ContentRow::FilesIntro];
+        let files = crate::content_rows::file_rows(course, data, &query);
+        if files.is_empty() {
+            rows.push(ContentRow::Message {
+                text: "No module files match this view.".into(),
+            });
+        } else {
+            rows.extend(files);
         }
-        if count == 0 {
-            view = view.child(muted("No module files match this view.", cx));
-        }
-        view.into_any_element()
+        self.virtual_rows(rows, cx)
     }
     fn file_detail(
         &self,
@@ -2100,14 +2364,7 @@ impl CanvasApp {
         }
         if self.document_view == DocumentView::Text {
             return view
-                .child(self.document_text(
-                    &document.course,
-                    &document.resource,
-                    &document.title,
-                    document.start,
-                    window,
-                    cx,
-                ))
+                .child(self.document_text(document, window, cx))
                 .into_any_element();
         }
         if data.is_none() && known_pages.is_none() {
@@ -2270,14 +2527,11 @@ impl CanvasApp {
     }
     fn document_text(
         &self,
-        course: &Option<String>,
-        resource: &str,
-        title: &str,
-        start: u64,
+        document: &DocumentSelection,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let args = json!({"resource":resource,"start":start});
+        let args = json!({"resource":document.resource,"start":document.start});
         let Some(data) = self.get("attachment_text", args.clone()) else {
             return self.loading("attachment_text", args, cx);
         };
@@ -2287,14 +2541,14 @@ impl CanvasApp {
             TextView::markdown("document-text", escape_text(&text), window, cx).selectable(true),
         ));
         let mut pages = div().flex().gap_3();
-        if start > 0 {
+        if document.start > 0 {
             pages = pages.child(self.route_button(
                 "document-first",
                 "Back to beginning",
                 Route::Document {
-                    course: course.clone(),
-                    resource: resource.into(),
-                    title: title.into(),
+                    course: document.course.clone(),
+                    resource: document.resource.clone(),
+                    title: document.title.clone(),
                     start: 0,
                 },
                 cx,
@@ -2305,9 +2559,9 @@ impl CanvasApp {
                 "document-next",
                 "Continue reading",
                 Route::Document {
-                    course: course.clone(),
-                    resource: resource.into(),
-                    title: title.into(),
+                    course: document.course.clone(),
+                    resource: document.resource.clone(),
+                    title: document.title.clone(),
                     start: next,
                 },
                 cx,
@@ -2321,7 +2575,7 @@ impl CanvasApp {
                     .child("Images in this document"),
             );
             for (index, image) in images.iter().enumerate() {
-                let resource = resource.to_owned();
+                let resource = document.resource.clone();
                 let page = image["page"].clone();
                 let number = image["image"].clone();
                 let supported = image["supported"].as_bool() == Some(true);
@@ -2355,7 +2609,7 @@ impl CanvasApp {
         view.into_any_element()
     }
     fn page_detail(
-        &self,
+        &mut self,
         course: &str,
         slug: &str,
         window: &mut Window,
@@ -2374,13 +2628,16 @@ impl CanvasApp {
         if let Some(reason) = page["lock_explanation"].as_str().filter(|s| !s.is_empty()) {
             view = view.child(muted(crate::html_content::notice_text(reason), cx));
         }
-        view = view.child(self.canvas_body(
-            format!("page-body-{slug}"),
-            &field(page, "body_html"),
-            course,
-            window,
-            cx,
-        ));
+        let body = field(page, "body_html");
+        if !body.trim().is_empty() {
+            view = view.child(self.canvas_body(
+                format!("page-body-{slug}"),
+                &body,
+                course,
+                window,
+                cx,
+            ));
+        }
         if let Some(url) = page["html_url"].as_str() {
             view = view.child(self.web_link("page-online", "Open page in Canvas", url, cx));
         }
@@ -2436,149 +2693,54 @@ impl CanvasApp {
         )
         .into_any_element()
     }
-    fn calendar(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn calendar(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let colors = palette(cx);
         let request = self.planner_request(false);
         let data = self.get(&request.name, request.args.clone());
         let items = model::list(data, "items");
+        let agenda = self.calendar_list || self.calendar_day.is_some();
+
+        if agenda {
+            let mut rows = vec![ContentRow::CalendarControls, ContentRow::CalendarFilters];
+            if self.picker == Some(Picker::CalendarCourse) {
+                rows.push(ContentRow::CalendarPicker);
+            }
+            if self.calendar_list {
+                rows.push(ContentRow::CalendarRange);
+            }
+            if let Some(day) = self.calendar_day {
+                rows.push(ContentRow::CalendarDayHeader {
+                    label: day.format("%A, %B %-d").to_string(),
+                });
+            }
+            if data.is_none() {
+                rows.push(ContentRow::Message {
+                    text: "Loading…".into(),
+                });
+            } else {
+                let scheduled = crate::content_rows::agenda_rows(
+                    items.iter().copied(),
+                    self.calendar_day,
+                    "",
+                    |course| self.course_name(course),
+                );
+                if scheduled.is_empty() {
+                    rows.push(ContentRow::Message {
+                        text: "Nothing scheduled in this view.".into(),
+                    });
+                } else {
+                    rows.extend(scheduled);
+                }
+            }
+            return self.virtual_rows(rows, cx);
+        }
+
         let mut view = div().flex().flex_col().gap_5();
-        let mut controls = div().flex().flex_wrap().gap_3().items_center();
-        for (delta, icon) in [(-1, IconName::ChevronLeft), (1, IconName::ChevronRight)] {
-            controls = controls.child(
-                Button::new(SharedString::from(format!("month-{delta}")))
-                    .icon(icon)
-                    .small()
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.month = model::shift_month(this.month, delta);
-                        this.applied_range = None;
-                        this.calendar_day = None;
-                        this.load_route(cx);
-                        cx.notify();
-                    })),
-            );
-        }
-        controls = controls
-            .child(
-                Button::new("calendar-today")
-                    .label("Today")
-                    .small()
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.month = model::month_start(Local::now().date_naive());
-                        this.applied_range = None;
-                        this.calendar_day = None;
-                        this.load_route(cx);
-                        cx.notify();
-                    })),
-            )
-            .child(
-                div()
-                    .text_xl()
-                    .flex_1()
-                    .child(self.month.format("%B %Y").to_string()),
-            )
-            .child(
-                Button::new("calendar-format")
-                    .label(if self.calendar_list {
-                        "Month"
-                    } else {
-                        "Agenda"
-                    })
-                    .small()
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.calendar_list = !this.calendar_list;
-                        this.applied_range = None;
-                        this.calendar_day = None;
-                        this.load_route(cx);
-                        cx.notify();
-                    })),
-            )
-            .child(
-                Button::new("calendar-new-todo")
-                    .icon(IconName::Plus)
-                    .label("To-do")
-                    .small()
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.open_note(None, None, window, cx)),
-                    ),
-            );
-        view = view.child(controls);
-        let course_label = self
-            .calendar_course
-            .as_deref()
-            .map(|id| self.course_name(id))
-            .unwrap_or_else(|| "All courses".into());
-        let mut filters = div().flex().flex_wrap().gap_2().items_center().child(
-            Button::new("calendar-course-picker")
-                .label(course_label)
-                .icon(IconName::ChevronDown)
-                .small()
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.picker = if this.picker == Some(Picker::CalendarCourse) {
-                        None
-                    } else {
-                        Some(Picker::CalendarCourse)
-                    };
-                    cx.notify();
-                })),
-        );
-        for (label, filter) in [
-            ("All", None),
-            ("To Do", Some("incomplete_items")),
-            ("Completed", Some("complete_items")),
-            ("New activity", Some("new_activity")),
-        ] {
-            filters = filters.child(
-                Button::new(SharedString::from(format!("calendar-filter-{label}")))
-                    .label(label)
-                    .small()
-                    .when(self.calendar_filter.as_deref() == filter, |b| b.primary())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.calendar_filter = filter.map(str::to_owned);
-                        this.load_route(cx);
-                        cx.notify();
-                    })),
-            );
-        }
-        view = view.child(filters);
+        view = view
+            .child(self.calendar_controls_element(cx))
+            .child(self.calendar_filters_element(cx));
         if self.picker == Some(Picker::CalendarCourse) {
             view = view.child(self.course_picker(Picker::CalendarCourse, cx));
-        }
-        if self.calendar_list {
-            view = view.child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_3()
-                    .child(muted("From", cx))
-                    .child(div().w(px(150.)).child(Input::new(&self.range_start)))
-                    .child(muted("Through", cx))
-                    .child(div().w(px(150.)).child(Input::new(&self.range_end)))
-                    .child(
-                        Button::new("apply-date-range")
-                            .label("Apply dates")
-                            .small()
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                let start = this.range_start.read(cx).value().to_string();
-                                let end = this.range_end.read(cx).value().to_string();
-                                if let (Ok(a), Ok(b)) = (
-                                    NaiveDate::parse_from_str(&start, "%Y-%m-%d"),
-                                    NaiveDate::parse_from_str(&end, "%Y-%m-%d"),
-                                ) && a <= b
-                                {
-                                    this.applied_range = Some((start, end));
-                                    this.calendar_day = None;
-                                    this.load_route(cx);
-                                } else {
-                                    this.error = Some(
-                                        "Choose valid dates with the end on or after the start."
-                                            .into(),
-                                    );
-                                }
-                                cx.notify();
-                            })),
-                    ),
-            );
         }
         if data.is_none() {
             return view
@@ -2591,132 +2753,100 @@ impl CanvasApp {
             .filter(|i| field(i, "title").to_lowercase().contains(&query))
             .collect();
         items.sort_by_cached_key(|i| item_date(i));
-        if self.calendar_list || self.calendar_day.is_some() {
-            if let Some(day) = self.calendar_day {
-                view = view.child(
+        let first =
+            self.month - chrono::Duration::days(self.month.weekday().num_days_from_sunday() as i64);
+        let items_by_day = model::planner_items_by_date(items.iter().copied());
+        let today = Local::now().date_naive();
+        let mut grid = div().border_1().border_color(rgb(colors.border));
+        let mut days = div().flex();
+        for name in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] {
+            days = days.child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .py_3()
+                    .text_center()
+                    .text_sm()
+                    .bg(rgb(colors.subtle))
+                    .child(name),
+            );
+        }
+        grid = grid.child(days);
+        for week in 0..6 {
+            let mut row = div().flex();
+            for weekday in 0..7 {
+                let day = first + chrono::Duration::days(week * 7 + weekday);
+                let selected = items_by_day.get(&day).map(Vec::as_slice).unwrap_or(&[]);
+                let mut cell = div()
+                    .flex_1()
+                    .min_w_0()
+                    .h(px(138.))
+                    .p_2()
+                    .border_t_1()
+                    .border_l_1()
+                    .border_color(rgb(colors.border))
+                    .overflow_hidden()
+                    .bg(rgb(if day.month() == self.month.month() {
+                        colors.surface
+                    } else {
+                        colors.subtle
+                    }));
+                cell = cell.child(
                     div()
-                        .flex()
-                        .gap_4()
-                        .items_center()
-                        .child(heading(day.format("%A, %B %-d").to_string()))
-                        .child(
-                            Button::new("calendar-all-days")
-                                .label("Back to month")
-                                .small()
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.calendar_day = None;
-                                    cx.notify();
-                                })),
-                        ),
-                );
-            }
-            let selected: Vec<_> = items
-                .iter()
-                .filter(|i| {
-                    self.calendar_day
-                        .is_none_or(|day| item_date(i) == Some(day))
-                })
-                .collect();
-            if selected.is_empty() {
-                view = view.child(muted("Nothing scheduled in this view.", cx));
-            }
-            for (index, item) in selected.iter().enumerate() {
-                view = view.child(self.planner_item(item, &format!("agenda-{index}"), false, cx));
-            }
-        } else {
-            let first = self.month
-                - chrono::Duration::days(self.month.weekday().num_days_from_sunday() as i64);
-            let items_by_day = model::planner_items_by_date(items.iter().copied());
-            let today = Local::now().date_naive();
-            let mut grid = div().border_1().border_color(rgb(colors.border));
-            let mut days = div().flex();
-            for name in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] {
-                days = days.child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .py_3()
-                        .text_center()
+                        .id(SharedString::from(format!("calendar-day-{day}")))
                         .text_sm()
-                        .bg(rgb(colors.subtle))
-                        .child(name),
-                );
-            }
-            grid = grid.child(days);
-            for week in 0..6 {
-                let mut row = div().flex();
-                for weekday in 0..7 {
-                    let day = first + chrono::Duration::days(week * 7 + weekday);
-                    let selected = items_by_day.get(&day).map(Vec::as_slice).unwrap_or(&[]);
-                    let mut cell = div()
-                        .flex_1()
-                        .min_w_0()
-                        .h(px(138.))
-                        .p_2()
-                        .border_t_1()
-                        .border_l_1()
-                        .border_color(rgb(colors.border))
-                        .overflow_hidden()
-                        .bg(rgb(if day.month() == self.month.month() {
-                            colors.surface
+                        .cursor_pointer()
+                        .text_color(rgb(if day == today {
+                            colors.link
                         } else {
-                            colors.subtle
+                            colors.muted
+                        }))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(day.day().to_string())
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.calendar_day = Some(day);
+                            cx.notify();
+                        })),
+                );
+                for (index, item) in selected.iter().take(2).enumerate() {
+                    let title = field(item, "title");
+                    let mut event = div()
+                        .id(SharedString::from(format!("calendar-event-{day}-{index}")))
+                        .mt_2()
+                        .px_1()
+                        .text_xs()
+                        .max_h(px(43.))
+                        .overflow_hidden()
+                        .cursor_pointer()
+                        .text_color(rgb(
+                            colors.category_text(model::course_color(&field(item, "course_id")))
+                        ))
+                        .child(title);
+                    if let Some(route) = model::planner_route(item) {
+                        event = event.on_click(cx.listener(move |this, _, window, cx| {
+                            this.go(route.clone(), window, cx)
                         }));
-                    cell = cell.child(
-                        div()
-                            .id(SharedString::from(format!("calendar-day-{day}")))
-                            .text_sm()
-                            .cursor_pointer()
-                            .text_color(rgb(if day == today {
-                                colors.link
-                            } else {
-                                colors.muted
-                            }))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(day.day().to_string())
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.calendar_day = Some(day);
-                                cx.notify();
-                            })),
-                    );
-                    for (index, item) in selected.iter().take(2).enumerate() {
-                        let title = field(item, "title");
-                        let mut event = div()
-                            .id(SharedString::from(format!("calendar-event-{day}-{index}")))
-                            .mt_2()
-                            .px_1()
-                            .text_xs()
-                            .max_h(px(43.))
-                            .overflow_hidden()
-                            .cursor_pointer()
-                            .text_color(rgb(colors
-                                .category_text(model::course_color(&field(item, "course_id")))))
-                            .child(title);
-                        if let Some(route) = model::planner_route(item) {
-                            event = event.on_click(cx.listener(move |this, _, window, cx| {
-                                this.go(route.clone(), window, cx)
-                            }));
-                        } else if let Some(url) = item["html_url"].as_str() {
-                            let url = url.to_owned();
-                            if url::Url::parse(&url)
-                                .is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
-                            {
-                                event = event.on_click(cx.listener(move |this, _, _, cx| {
+                    } else if let Some(url) = item["html_url"].as_str() {
+                        let url = url.to_owned();
+                        if url::Url::parse(&url)
+                            .is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
+                        {
+                            event =
+                                event.on_click(cx.listener(move |this, _, _, cx| {
                                     this.open_canvas_link(&url, cx)
                                 }));
-                            }
                         }
-                        cell = cell.child(event);
                     }
-                    if selected.len() > 2 {
-                        cell = cell.child(muted(format!("+{} more", selected.len() - 2), cx));
-                    }
-                    row = row.child(cell);
+                    cell = cell.child(event);
                 }
-                grid = grid.child(row);
+                if selected.len() > 2 {
+                    cell = cell.child(muted(format!("+{} more", selected.len() - 2), cx));
+                }
+                row = row.child(cell);
             }
-            view = view.child(grid);
+            grid = grid.child(row);
         }
+        view = view.child(grid);
         view.into_any_element()
     }
     fn course_picker(&self, which: Picker, cx: &mut Context<Self>) -> AnyElement {
@@ -3080,33 +3210,48 @@ impl Render for CanvasApp {
                     .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
             );
         }
+        let virtual_modules = self.showing_modules();
+        let virtual_document = self.showing_document_pages();
+        let virtual_rows = self.showing_content_rows();
+        // The heading and search stay pinned above the scrolling body. This is
+        // the same on every screen that has a search, so it does not disappear
+        // on one list and stay on another.
+        let show_heading = !reading_document
+            && !matches!(
+                self.route,
+                Route::Account
+                    | Route::Assignment { .. }
+                    | Route::Page { .. }
+                    | Route::Document { .. }
+                    | Route::Note(_)
+            );
+        let heading_region = show_heading.then(|| {
+            div()
+                .id("page-heading")
+                .debug_selector(|| "page-heading-bounds".into())
+                .flex()
+                .items_center()
+                .gap_4()
+                .justify_between()
+                .px_7()
+                .pt_7()
+                .pb_6()
+                .on_scroll_wheel(cx.listener(|this, event, _window, cx| {
+                    this.scroll_from_pinned_heading(event, cx)
+                }))
+                .child(heading(title.clone()))
+                .child(div().w(px(245.)).child(Input::new(&self.search)))
+        });
         let mut content = if reading_document {
             div().flex().flex_col().gap_1().p_1()
+        } else if show_heading {
+            // The pinned heading supplies the top padding and the gap.
+            div().flex().flex_col().gap_6().px_7().pb_7()
         } else {
             div().flex().flex_col().gap_6().p_7()
         };
-        let virtual_modules = self.showing_modules();
-        let virtual_document = self.showing_document_pages();
-        if virtual_modules || virtual_document {
+        if virtual_modules || virtual_document || virtual_rows {
             content = content.flex_1().min_h_0().overflow_hidden();
-        }
-        if !matches!(
-            self.route,
-            Route::Account
-                | Route::Assignment { .. }
-                | Route::Page { .. }
-                | Route::Document { .. }
-                | Route::Note(_)
-        ) {
-            content = content.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_4()
-                    .justify_between()
-                    .child(heading(title))
-                    .child(div().w(px(245.)).child(Input::new(&self.search))),
-            );
         }
         if self.error.is_some() {
             let message = if self.session_expired {
@@ -3269,19 +3414,27 @@ impl Render for CanvasApp {
         {
             body = body.child(self.course_nav(course, cx));
         }
-        body = body.child(
+        let mut right = div().flex_1().min_w_0().h_full().flex().flex_col();
+        if let Some(heading_region) = heading_region {
+            right = right.child(heading_region);
+        }
+        right = right.child(
             div()
                 .id("canvas-content")
                 .flex_1()
                 .min_w_0()
-                .h_full()
-                .when(!virtual_modules && !virtual_document, |d| {
-                    d.overflow_y_scroll()
-                })
+                .min_h_0()
+                .track_scroll(&self.page_scroll)
+                .when(
+                    !virtual_modules && !virtual_document && !virtual_rows,
+                    |d| d.overflow_y_scroll(),
+                )
                 .when(virtual_modules, |d| d.flex().flex_col().overflow_hidden())
                 .when(virtual_document, |d| d.flex().flex_col().overflow_hidden())
+                .when(virtual_rows, |d| d.flex().flex_col().overflow_hidden())
                 .child(content),
         );
+        body = body.child(right);
         let nav = if reading_document {
             None
         } else {
